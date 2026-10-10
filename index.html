@@ -240,30 +240,15 @@ body {
 .kb-strip[data-labels="none"] .lbl { display: none; }
 .kb-strip[data-labels="c"] .key[data-c="1"] .lbl { display: flex; }
 
-/* 诊断条：版本 / 采样率 / 输出延迟 / 音源就绪数 */
-#diag {
-  position: fixed;
-  left: 8px; bottom: calc(4px + env(safe-area-inset-bottom));
-  z-index: 60;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  color: rgba(210, 218, 226, .55);
-  background: rgba(10, 12, 15, .45);
-  padding: 2px 7px;
-  border-radius: 8px;
-  pointer-events: none;
-}
-
-/* ===== 加载层（仅视觉提示，不拦截触摸：解码期间也能弹琴，先以合成音发声） ===== */
+/* ===== 加载蒙层：挡住按键直到音源就绪，消失后按键立即发声 ===== */
 #loader {
   position: fixed; inset: 0;
   z-index: 50;
-  background: rgba(8, 10, 13, .55);
+  background: #0a0c0f;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   gap: 12px;
   color: #cfd5db; font-size: 14px;
-  pointer-events: none;
 }
 .spin {
   width: 34px; height: 34px;
@@ -300,7 +285,6 @@ body {
   <section class="kb-row" id="rowBottom" aria-label="下排键盘"></section>
 </main>
 
-<div id="diag">v12</div>
 <div id="loader"><div class="spin"></div><p id="loaderText">正在解码采样音色…</p></div>
 
 </div>
@@ -1123,21 +1107,25 @@ class KeyboardRow {
       mq.addEventListener ? mq.addEventListener('change', mqHandler) : mq.addListener(mqHandler);
     }
 
-    // 音源加载：优先解码内嵌真实采样，失败则回落合成（Worker 渲染）
+    // 音源加载：优先解码内嵌真实采样，失败则回落合成（Worker 渲染）。
+    // 蒙层在音源就绪前挡住按键，就绪后消失——之后第一次按键即真实采样、立即发声。
     const loader = $('#loader'), loaderText = $('#loaderText');
     loader.style.display = 'flex';
     const startSynth = () => {
       loaderText.textContent = '正在准备音色…';
       const centers = [whiteMidi(top.start + Math.floor(count / 2)), whiteMidi(bottom.start + Math.floor(count / 2))];
       PianoAudio.prepare(centers, p => { if (p >= 0.3) hideLoader(); }, hideLoader);
-      setTimeout(hideLoader, 4000); // 兜底：无论如何别挡着玩
+      setTimeout(hideLoader, 6000); // 兜底：窗口音早已就绪，不至于一直挡着
     };
     PianoAudio.loadSamples(
       p => { loaderText.textContent = '正在解码采样音色 ' + Math.round(p * 100) + '%'; },
-      () => hideLoader(),
+      hideLoader,
       startSynth
     );
-    setTimeout(() => { if (!PianoAudio.inSampleMode() && PianoAudio.readyCount() === 0) startSynth(); }, 8000);
+    setTimeout(() => {                         // 20s 兜底：解码异常卡死时也放行
+      if (PianoAudio.inSampleMode() || PianoAudio.readyCount() > 0) hideLoader();
+      else startSynth();
+    }, 20000);
 
     // 音色切换：采样 ↔ 合成
     const toneBtn = $('#toneToggle');
@@ -1151,17 +1139,7 @@ class KeyboardRow {
       if (PianoAudio.setSampleMode(wantSample)) setToneUi(wantSample);
     });
 
-    // 诊断条：确认设备上跑的版本、采样率、输出延迟、音源模式
-    const diag = $('#diag');
-    setInterval(() => {
-      const bl = PianoAudio.baseLatency();
-      diag.textContent = 'v12 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
-        + (bl != null ? '延迟~' + Math.round(bl * 1000) + 'ms · ' : '')
-        + (PianoAudio.inSampleMode() ? '采样' : '合成')
-        + (PianoAudio.dbg.worker ? '' : ' · worker不可用');
-    }, 500);
-
-    // 测试钩子
+    console.log('[纸带钢琴] v13');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
