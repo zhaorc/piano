@@ -299,7 +299,7 @@ body {
   <section class="kb-row" id="rowBottom" aria-label="下排键盘"></section>
 </main>
 
-<div id="diag">v10</div>
+<div id="diag">v11</div>
 <div id="loader"><div class="spin"></div><p id="loaderText">正在解码采样音色…</p></div>
 
 </div>
@@ -605,10 +605,9 @@ function renderNote(m,sr){
     } catch (e) { /* 已停止 */ }
   }
 
-  function noteOn(m, vel) {
-    unlock();
-    vel = Math.max(0.2, Math.min(1, vel || 1));
+  const pendingOff = new Map();   // resume 完成前手指已抬起的音：起音后立即释放（短促一声而非哑掉）
 
+  function startVoice(m, vel) {
     let buf = null;
     if (useSample && sampleReady) {
       const ab = sampleBufs.get(noteName(m));
@@ -650,12 +649,36 @@ function renderNote(m,sr){
     const rec = { src, gain, t, on: true };
     src.onended = () => { if (voices.get(m) === rec) voices.delete(m); };
     voices.set(m, rec);
+
+    if (pendingOff.has(m)) {                   // resume 期间手指已抬起：立即释放成短音
+      pendingOff.delete(m);
+      rec.on = false;
+      gain.gain.setTargetAtTime(0, t, 0.06);
+      try { src.stop(t + 0.3); } catch (e) {}
+    }
     dbg.lastOn = m; dbg.onCount++;
+  }
+
+  function noteOn(m, vel) {
+    unlock();
+    vel = Math.max(0.2, Math.min(1, vel || 1));
+    if (ctx.state === 'running') {
+      pendingOff.delete(m);                    // 上下文已就绪，无残留的"提前抬起"标记
+      startVoice(m, vel);
+      return;
+    }
+    // 首次手势：上下文恢复中，等 resume 完成再起音（调度过早会被部分浏览器丢弃）
+    try {
+      const r = ctx.resume();
+      if (r && r.then) r.then(() => startVoice(m, vel), () => startVoice(m, vel));
+      else startVoice(m, vel);
+    } catch (e) { startVoice(m, vel); }
   }
 
   function noteOff(m) {
     const v = voices.get(m);
-    if (v && v.on) {
+    if (!v) { pendingOff.set(m, true); return; }   // 起音还在排队：标记手指已抬起
+    if (v.on) {
       v.on = false;
       const t = ctx.currentTime;
       v.gain.gain.setTargetAtTime(0, t, 0.22);   // 松键余韵更长
@@ -1064,8 +1087,8 @@ class KeyboardRow {
 
     $('#volume').addEventListener('input', e => PianoAudio.setVolume(e.target.value / 100));
 
-    // 音频解锁：每次手势都尝试 resume（从后台回来也能恢复）；顺带尝试锁定横屏
-    document.addEventListener('pointerdown', () => PianoAudio.unlock());
+    // 音频解锁：捕获阶段尽早触发（先于琴键处理）；每次手势都尝试 resume（从后台回来也能恢复）
+    document.addEventListener('pointerdown', () => PianoAudio.unlock(), { capture: true });
     const lockLandscape = () => {
       try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* 不支持则忽略 */ }
     };
@@ -1122,7 +1145,7 @@ class KeyboardRow {
     const diag = $('#diag');
     setInterval(() => {
       const bl = PianoAudio.baseLatency();
-      diag.textContent = 'v10 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
+      diag.textContent = 'v11 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
         + (bl != null ? '延迟~' + Math.round(bl * 1000) + 'ms · ' : '')
         + (PianoAudio.inSampleMode() ? '采样' : '合成')
         + (PianoAudio.dbg.worker ? '' : ' · worker不可用');
