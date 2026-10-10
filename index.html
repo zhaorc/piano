@@ -148,17 +148,19 @@ body {
     rgba(40, 44, 50, .85) 0 1px,
     transparent 1px calc(100% / 52));
 }
-.tape-bks { position: absolute; top: 0; left: 0; right: 0; height: 62%; }
+.tape-winbg { position: absolute; top: 0; bottom: 0; background: #fbfdff; z-index: 1; }
+.tape-bks { position: absolute; top: 0; left: 0; right: 0; height: 62%; z-index: 3; }
 .tape-bks i { position: absolute; top: 0; height: 100%; background: #181c21; }
-.tape-dim { position: absolute; top: 0; bottom: 0; background: rgba(6, 9, 13, .75); }
+.tape-dim { position: absolute; top: 0; bottom: 0; background: rgba(4, 6, 9, .85); z-index: 4; }
 .tape-win {
   position: absolute;
   top: 0; bottom: 0;
-  border: 2px solid #f2f7fb;
-  background: rgba(255, 255, 255, .12);
+  border: 2px solid #ffffff;
   box-sizing: border-box;
   pointer-events: none;
+  z-index: 5;
 }
+.kb-tape::before { z-index: 2; }
 
 /* 键盘窗口 */
 .kb-view {
@@ -285,7 +287,7 @@ body {
   <section class="kb-row" id="rowBottom" aria-label="下排键盘"></section>
 </main>
 
-<div id="diag">v8</div>
+<div id="diag">v9</div>
 <div id="loader"><div class="spin"></div><p>正在准备音色…</p></div>
 
 </div>
@@ -895,6 +897,8 @@ class KeyboardRow {
   /* 纸带：88 键缩略图（DOM 实现，与主键盘同一渲染路径，手机旋转下不发虚）。
    * 白键底 + 分隔线用 CSS 渐变；黑键为一次性生成的 div；窗口高亮/两端压暗只更新样式 */
   buildTape() {
+    this.tapeWinBg = document.createElement('div');   // 亮区亮底：垫在黑键下，白键提亮、黑键不受影响
+    this.tapeWinBg.className = 'tape-winbg';
     const bks = document.createElement('div');
     bks.className = 'tape-bks';
     for (const n of PIANO_NOTES) {
@@ -912,6 +916,7 @@ class KeyboardRow {
     this.tapeDimR.style.right = '0';         // 右压暗层锚定右缘（否则绝对定位会堆在左侧，盖住高亮区）
     this.tapeWin = document.createElement('div');
     this.tapeWin.className = 'tape-win';
+    this.tape.appendChild(this.tapeWinBg);
     this.tape.appendChild(bks);
     this.tape.appendChild(this.tapeDimL);
     this.tape.appendChild(this.tapeDimR);
@@ -920,6 +925,8 @@ class KeyboardRow {
 
   drawTape() {
     const L = this.start / WHITE_COUNT * 100, W = this.count / WHITE_COUNT * 100;
+    this.tapeWinBg.style.left = L.toFixed(3) + '%';
+    this.tapeWinBg.style.width = W.toFixed(3) + '%';
     this.tapeDimL.style.width = L.toFixed(3) + '%';
     this.tapeDimR.style.width = (100 - L - W).toFixed(3) + '%';
     this.tapeWin.style.left = L.toFixed(3) + '%';
@@ -1022,7 +1029,7 @@ class KeyboardRow {
     const diag = $('#diag');
     setInterval(() => {
       const bl = PianoAudio.baseLatency();
-      diag.textContent = 'v8 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
+      diag.textContent = 'v9 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
         + (bl != null ? '延迟~' + Math.round(bl * 1000) + 'ms · ' : '')
         + '音源 ' + PianoAudio.readyCount() + '/88'
         + (PianoAudio.dbg.worker ? '' : ' · worker不可用');
