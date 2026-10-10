@@ -128,13 +128,36 @@ body {
 .nav-btn:active { background: #2c323a; }
 .nav-btn:disabled { opacity: .26; }
 
+/* 纸带：DOM 实现（白键底+渐变分隔线，黑键/压暗/高亮为绝对定位元素） */
 .kb-tape {
+  position: relative;
   flex: 1;
   min-width: 0;
   height: 100%;
   border-radius: 4px;
+  background: #c9ced4;
+  overflow: hidden;
   cursor: pointer;
   touch-action: none;
+}
+.kb-tape::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg,
+    rgba(40, 44, 50, .85) 0 1px,
+    transparent 1px calc(100% / 52));
+}
+.tape-bks { position: absolute; top: 0; left: 0; right: 0; height: 62%; }
+.tape-bks i { position: absolute; top: 0; height: 100%; background: #181c21; }
+.tape-dim { position: absolute; top: 0; bottom: 0; background: rgba(6, 9, 13, .75); }
+.tape-win {
+  position: absolute;
+  top: 0; bottom: 0;
+  border: 2px solid #f2f7fb;
+  background: rgba(255, 255, 255, .12);
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
 /* 键盘窗口 */
@@ -262,7 +285,7 @@ body {
   <section class="kb-row" id="rowBottom" aria-label="下排键盘"></section>
 </main>
 
-<div id="diag">v5</div>
+<div id="diag">v7</div>
 <div id="loader"><div class="spin"></div><p>正在准备音色…</p></div>
 
 </div>
@@ -343,23 +366,6 @@ function renderNote(m,sr){
     st1[j]=Math.pow(P[j].s1,BLK);st2[j]=Math.pow(P[j].s2,BLK);
   }
   const e1=new Float32Array(NP).fill(1),e2=new Float32Array(NP).fill(1);
-  let lpH=0;
-  const nClick=Math.min(n,(sr*0.004)|0);
-  for(let i=0;i<nClick;i++){
-    const w=Math.random()*2-1;
-    out[i]+=(w-lpH)*Math.exp(-i/(sr*0.0012))*0.5;
-    lpH+=(w-lpH)*0.3;
-  }
-  {
-    let lp=0;
-    const aLP=1-Math.exp(-2*Math.PI*Math.min(3500,Math.max(300,f0*3))/sr);
-    const nThunk=Math.min(n,(sr*0.03)|0);
-    const env=0.32*(0.4+0.6*Math.exp(-f0/900));
-    for(let i=0;i<nThunk;i++){
-      lp+=(Math.random()*2-1-lp)*aLP;
-      out[i]+=lp*Math.exp(-i/(sr*0.009))*env;
-    }
-  }
   const att=Math.max(1,(sr*0.0025)|0);
   let blk=BLK;
   for(let i=0;i<n;i++){
@@ -479,25 +485,6 @@ function renderNote(m,sr){
     }
     const e1 = new Float32Array(NP).fill(1);   // 快包络（击弦瞬态，对应 s1/tau1）
     const e2 = new Float32Array(NP).fill(1);   // 慢包络（琴体余响，对应 s2/tau2）
-
-    // 琴槌噪声：1) 4ms 亮瞬态（粗高通） 2) 30ms 低通闷响，音高越低越闷
-    let lpH = 0;
-    const nClick = Math.min(n, (sr * 0.004) | 0);
-    for (let i = 0; i < nClick; i++) {
-      const w = Math.random() * 2 - 1;
-      out[i] += (w - lpH) * Math.exp(-i / (sr * 0.0012)) * 0.5;
-      lpH += (w - lpH) * 0.3;
-    }
-    {
-      let lp = 0;
-      const aLP = 1 - Math.exp(-2 * Math.PI * Math.min(3500, Math.max(300, f0 * 3)) / sr);
-      const nThunk = Math.min(n, (sr * 0.03) | 0);
-      const env = 0.32 * (0.4 + 0.6 * Math.exp(-f0 / 900));
-      for (let i = 0; i < nThunk; i++) {
-        lp += (Math.random() * 2 - 1 - lp) * aLP;
-        out[i] += lp * Math.exp(-i / (sr * 0.009)) * env;
-      }
-    }
 
     // 主合成循环：定点相位 + 块状双段包络
     const att = Math.max(1, (sr * 0.0025) | 0);
@@ -720,7 +707,7 @@ class KeyboardRow {
       '<div class="kb-nav">' +
         `<button class="nav-btn" data-nav="pageLeft" aria-label="向前翻页">${NAV_SVG.pageLeft}</button>` +
         `<button class="nav-btn" data-nav="stepLeft" aria-label="左移一个键">${NAV_SVG.stepLeft}</button>` +
-        '<canvas class="kb-tape" aria-label="键盘全览纸带，点按或拖动跳转"></canvas>' +
+        '<div class="kb-tape" aria-label="键盘全览纸带，点按或拖动跳转"></div>' +
         `<button class="nav-btn" data-nav="stepRight" aria-label="右移一个键">${NAV_SVG.stepRight}</button>` +
         `<button class="nav-btn" data-nav="pageRight" aria-label="向后翻页">${NAV_SVG.pageRight}</button>` +
       '</div>' +
@@ -733,6 +720,7 @@ class KeyboardRow {
     this.tape = root.querySelector('.kb-tape');
 
     this.buildKeys();
+    this.buildTape();
     this.bindNav();
     this.bindTape();
     this.bindKeys();
@@ -904,43 +892,36 @@ class KeyboardRow {
     this.view.addEventListener('pointercancel', end);
   }
 
-  /* 纸带：88 键缩略图，当前窗口高亮。
-   * 所有绘制坐标吸附整数像素（半像素会发虚），高亮框加粗提对比 */
-  drawTape() {
-    const r = this.tape.getBoundingClientRect();
-    if (!r.width) return;
-    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-    const W = r.width, H = r.height;
-    const bw = Math.round(W * dpr), bh = Math.round(H * dpr);
-    if (this.tape.width !== bw || this.tape.height !== bh) {
-      this.tape.width = bw;
-      this.tape.height = bh;
-    }
-    const g = this.tape.getContext('2d');
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const ww = W / WHITE_COUNT;
-
-    g.fillStyle = '#c9ced4';
-    g.fillRect(0, 0, W, H);
-    g.fillStyle = 'rgba(40,44,50,.85)';
-    for (let i = 1; i < WHITE_COUNT; i++) g.fillRect(Math.round(i * ww), 0, 1, H);
-
-    g.fillStyle = '#181c21';
+  /* 纸带：88 键缩略图（DOM 实现，与主键盘同一渲染路径，手机旋转下不发虚）。
+   * 白键底 + 分隔线用 CSS 渐变；黑键为一次性生成的 div；窗口高亮/两端压暗只更新样式 */
+  buildTape() {
+    const bks = document.createElement('div');
+    bks.className = 'tape-bks';
     for (const n of PIANO_NOTES) {
       if (!n.black) continue;
-      const x = Math.round(n.center * ww - 0.29 * ww);
-      g.fillRect(x, 0, Math.max(1, Math.round(0.58 * ww)), H * 0.62);
+      const b = document.createElement('i');
+      b.style.left = ((n.center - 0.29) / WHITE_COUNT * 100) + '%';
+      b.style.width = (0.58 / WHITE_COUNT * 100) + '%';
+      bks.appendChild(b);
     }
+    this.tapeDimL = document.createElement('div');
+    this.tapeDimL.className = 'tape-dim';
+    this.tapeDimR = document.createElement('div');
+    this.tapeDimR.className = 'tape-dim';
+    this.tapeWin = document.createElement('div');
+    this.tapeWin.className = 'tape-win';
+    this.tape.appendChild(bks);
+    this.tape.appendChild(this.tapeDimL);
+    this.tape.appendChild(this.tapeDimR);
+    this.tape.appendChild(this.tapeWin);
+  }
 
-    const wx = Math.round(this.start * ww), wc = Math.round(this.count * ww);
-    g.fillStyle = 'rgba(6,9,13,.75)';
-    g.fillRect(0, 0, wx, H);
-    g.fillRect(wx + wc, 0, W - wx - wc, H);
-    g.fillStyle = 'rgba(255,255,255,.12)';
-    g.fillRect(wx, 0, wc, H);
-    g.strokeStyle = '#f2f7fb';
-    g.lineWidth = 2;
-    g.strokeRect(wx + 1, 1, wc - 2, H - 2);
+  drawTape() {
+    const L = this.start / WHITE_COUNT * 100, W = this.count / WHITE_COUNT * 100;
+    this.tapeDimL.style.width = L.toFixed(3) + '%';
+    this.tapeDimR.style.width = (100 - L - W).toFixed(3) + '%';
+    this.tapeWin.style.left = L.toFixed(3) + '%';
+    this.tapeWin.style.width = W.toFixed(3) + '%';
   }
 }
 
@@ -1039,7 +1020,7 @@ class KeyboardRow {
     const diag = $('#diag');
     setInterval(() => {
       const bl = PianoAudio.baseLatency();
-      diag.textContent = 'v6 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
+      diag.textContent = 'v7 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
         + (bl != null ? '延迟~' + Math.round(bl * 1000) + 'ms · ' : '')
         + '音源 ' + PianoAudio.readyCount() + '/88'
         + (PianoAudio.dbg.worker ? '' : ' · worker不可用');
