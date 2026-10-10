@@ -71,16 +71,6 @@ body {
 
 #countVal { min-width: 2ch; text-align: center; font-size: 15px; font-weight: 600; }
 
-.tb-chip {
-  padding: 5px 13px;
-  border-radius: 15px;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: #cfd5db;
-  font-size: 13px;
-}
-.tb-chip.active { background: #2f6f43; border-color: #3f8f58; color: #dff5e4; }
-
 .tb-vol { margin-left: auto; }
 #volume { width: 110px; accent-color: #e0483e; }
 
@@ -201,7 +191,6 @@ body {
 .kb-strip[data-labels="c"] .lbl,
 .kb-strip[data-labels="none"] .lbl { display: none; }
 .kb-strip[data-labels="c"] .key[data-c="1"] .lbl { display: flex; }
-body.hide-labels .lbl { display: none !important; }
 
 /* 诊断条：版本 / 采样率 / 输出延迟 / 音源就绪数 */
 #diag {
@@ -236,28 +225,6 @@ body.hide-labels .lbl { display: none !important; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* 竖屏提示（自动消失） */
-#hint {
-  position: fixed;
-  left: 50%; bottom: 16px;
-  transform: translateX(-50%);
-  background: rgba(20, 24, 29, .92);
-  color: var(--fg);
-  font-size: 13px;
-  padding: 8px 16px;
-  border-radius: 18px;
-  z-index: 40;
-  pointer-events: none;
-  opacity: 0;
-}
-@media (orientation: portrait) {
-  #hint { animation: hint 4s ease .6s forwards; }
-}
-@keyframes hint {
-  0% { opacity: 0; } 15% { opacity: 1; }
-  75% { opacity: 1; } 100% { opacity: 0; }
-}
-
 </style>
 </head>
 <body>
@@ -270,7 +237,6 @@ body.hide-labels .lbl { display: none !important; }
     <button id="countPlus" class="tb-btn" aria-label="增加每屏键数">＋</button>
     <span class="tb-label">键</span>
   </div>
-  <button id="labelToggle" class="tb-chip active" aria-pressed="true">标签</button>
   <div class="tb-group tb-vol">
     <span class="tb-label">音量</span>
     <input id="volume" type="range" min="0" max="100" value="80" aria-label="音量">
@@ -282,9 +248,8 @@ body.hide-labels .lbl { display: none !important; }
   <section class="kb-row" id="rowBottom" aria-label="下排键盘"></section>
 </main>
 
-<div id="diag">v3</div>
+<div id="diag">v4</div>
 <div id="loader"><div class="spin"></div><p>正在准备音色…</p></div>
-<div id="hint">建议横屏使用，体验更佳</div>
 
 <script>
 'use strict';
@@ -731,6 +696,7 @@ class KeyboardRow {
     this.count = 14;      // 窗口内白键数
     this.start = 0;       // 窗口起点（白键序号）
     this.keyW = 0;
+    this.margin = 0;      // 两侧留白（1 个黑键宽）
     this.active = new Map();   // pointerId -> midi
     this.keyEls = new Map();   // midi -> element
 
@@ -797,16 +763,19 @@ class KeyboardRow {
     this.layout();
   }
 
-  /* 窗口切换：只写 transform，无过渡、无重建 → 零延迟 */
+  /* 窗口切换：只写 transform，无过渡、无重建 → 零延迟
+   * 两侧各留 1 个黑键宽（margin），窗外邻键会探进边缘 */
   applyWindow() {
-    this.strip.style.transform = `translate3d(${(-this.start * this.keyW).toFixed(2)}px,0,0)`;
+    const tx = this.margin - this.start * this.keyW;
+    this.strip.style.transform = `translate3d(${tx.toFixed(2)}px,0,0)`;
     this.drawTape();
     this.updateNav();
   }
 
   layout() {
     const vw = this.view.clientWidth || 1;
-    this.keyW = vw / this.count;
+    this.keyW = vw / (this.count + 1.16);   // 两侧各留 0.58 白键宽（=1 黑键宽）
+    this.margin = 0.58 * this.keyW;
     this.strip.style.width = (WHITE_COUNT * this.keyW) + 'px';
     this.strip.style.setProperty('--key-w', this.keyW + 'px');
     this.strip.dataset.labels = this.keyW >= 30 ? 'all' : (this.keyW >= 17 ? 'c' : 'none');
@@ -990,20 +959,20 @@ class KeyboardRow {
     top.setStart(9);      // C2
     bottom.setStart(23);  // C4
 
-    // 顶栏：每屏键数（按住连发）、标签开关、音量
+    // 顶栏：每屏键数（按住连发）、音量
     holdable($('#countMinus'), () => applyCount(count - 1));
     holdable($('#countPlus'), () => applyCount(count + 1));
     applyCount(count);
 
-    $('#labelToggle').addEventListener('click', e => {
-      const on = document.body.classList.toggle('hide-labels');
-      e.currentTarget.classList.toggle('active', !on);
-      e.currentTarget.setAttribute('aria-pressed', String(!on));
-    });
     $('#volume').addEventListener('input', e => PianoAudio.setVolume(e.target.value / 100));
 
-    // 音频解锁：每次手势都尝试 resume（从后台回来也能恢复）
+    // 音频解锁：每次手势都尝试 resume（从后台回来也能恢复）；顺带尝试锁定横屏
     document.addEventListener('pointerdown', () => PianoAudio.unlock());
+    const lockLandscape = () => {
+      try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* 不支持则忽略 */ }
+    };
+    lockLandscape();
+    document.addEventListener('pointerdown', lockLandscape);
     document.addEventListener('contextmenu', e => e.preventDefault());
     document.addEventListener('gesturestart', e => e.preventDefault()); // iOS 捏合
 
@@ -1023,7 +992,7 @@ class KeyboardRow {
     const diag = $('#diag');
     setInterval(() => {
       const bl = PianoAudio.baseLatency();
-      diag.textContent = 'v3 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
+      diag.textContent = 'v4 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
         + (bl != null ? '延迟~' + Math.round(bl * 1000) + 'ms · ' : '')
         + '音源 ' + PianoAudio.readyCount() + '/88'
         + (PianoAudio.dbg.worker ? '' : ' · worker不可用');
