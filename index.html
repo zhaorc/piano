@@ -28,10 +28,9 @@ html, body {
 }
 
 body {
-  height: 100vh;
-  height: 100dvh;
-  display: flex;
-  flex-direction: column;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
   background: var(--bg);
   color: var(--fg);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -39,6 +38,19 @@ body {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   touch-action: none;
+}
+
+/* 整个应用包一层：竖屏时旋转 90°，默认以横屏方式呈现（尺寸由 JS 按视口精确设置） */
+#app {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  display: flex;
+  flex-direction: column;
+}
+@media (orientation: portrait) {
+  #app { transform: rotate(90deg); }
 }
 
 /* ===== 顶栏 ===== */
@@ -229,6 +241,8 @@ body {
 </head>
 <body>
 
+<div id="app">
+
 <header id="toolbar">
   <div class="tb-group">
     <span class="tb-label">每屏</span>
@@ -248,8 +262,10 @@ body {
   <section class="kb-row" id="rowBottom" aria-label="下排键盘"></section>
 </main>
 
-<div id="diag">v4</div>
+<div id="diag">v5</div>
 <div id="loader"><div class="spin"></div><p>正在准备音色…</p></div>
+
+</div>
 
 <script>
 'use strict';
@@ -828,10 +844,17 @@ class KeyboardRow {
       return m ? { midi: +m, el } : null;
     };
     // 按键位置→力度：靠近键顶端力度大（音量+亮度联动）
+    // 竖屏时整个页面被旋转 90°，键的"纵向"落在屏幕横向，需换算
+    const rotated = () => window.innerHeight > window.innerWidth;
     const velocityOf = (k, e) => {
       if (!e) return 1;
       const r = k.el.getBoundingClientRect();
-      const relY = r.height ? (e.clientY - r.top) / r.height : 0;
+      let relY;
+      if (rotated()) {
+        relY = (r.right - e.clientX) / (r.width || 1);
+      } else {
+        relY = (e.clientY - r.top) / (r.height || 1);
+      }
       const t = k.el.classList.contains('black')
         ? relY
         : Math.max(0, (relY - 0.6) / 0.4);   // 白键顶端被黑键占据，从黑键下沿起算
@@ -948,8 +971,20 @@ class KeyboardRow {
     $('#loader').style.display = 'none';
   }
 
+  /* 竖屏时页面旋转 90° 呈现横屏，这里按物理视口精确设置 #app 尺寸 */
+  function fitApp() {
+    const app = document.getElementById('app');
+    const w = window.innerWidth, h = window.innerHeight;
+    const portrait = h > w;
+    app.style.left = portrait ? w + 'px' : '0';
+    app.style.top = '0';
+    app.style.width = (portrait ? h : w) + 'px';
+    app.style.height = (portrait ? w : h) + 'px';
+  }
+
   function init() {
     PianoAudio.initDevice();   // 尽早创建：拿到设备真实采样率，渲染零重采样
+    fitApp();                  // 先定好尺寸再建键盘（行宽取决于视口方向）
 
     // 上排默认低音区 C2 起，下排中音区 C4 起（窗口位置互相独立）
     const top = new KeyboardRow($('#rowTop'), { audio: PianoAudio });
@@ -976,11 +1011,21 @@ class KeyboardRow {
     document.addEventListener('contextmenu', e => e.preventDefault());
     document.addEventListener('gesturestart', e => e.preventDefault()); // iOS 捏合
 
-    // 自适应：转屏/改窗口尺寸后重排
+    // 自适应：转屏/改窗口尺寸后先重设 #app 尺寸（决定横/竖屏旋转），再重排键盘
     let rt = 0;
-    const relayout = () => { clearTimeout(rt); rt = setTimeout(() => rows.forEach(r => r.layout()), 60); };
-    window.addEventListener('resize', relayout);
-    window.addEventListener('orientationchange', relayout);
+    const relayout = () => {
+      clearTimeout(rt);
+      rt = setTimeout(() => { fitApp(); rows.forEach(r => r.layout()); }, 60);
+    };
+    const onRotate = () => { fitApp(); relayout(); };
+    window.addEventListener('resize', onRotate);
+    window.addEventListener('orientationchange', onRotate);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', onRotate);
+    if (window.matchMedia) {
+      const mq = window.matchMedia('(orientation: portrait)');
+      const mqHandler = () => onRotate();
+      mq.addEventListener ? mq.addEventListener('change', mqHandler) : mq.addListener(mqHandler);
+    }
 
     // 预渲染音源：Worker 里跑（主线程零负担），优先两排窗口中段的音
     $('#loader').style.display = 'flex';
@@ -992,7 +1037,7 @@ class KeyboardRow {
     const diag = $('#diag');
     setInterval(() => {
       const bl = PianoAudio.baseLatency();
-      diag.textContent = 'v4 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
+      diag.textContent = 'v5 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
         + (bl != null ? '延迟~' + Math.round(bl * 1000) + 'ms · ' : '')
         + '音源 ' + PianoAudio.readyCount() + '/88'
         + (PianoAudio.dbg.worker ? '' : ' · worker不可用');
