@@ -790,8 +790,9 @@ class KeyboardRow {
 
   layout() {
     const vw = this.view.clientWidth || 1;
-    this.keyW = vw / (this.count + 1.16);   // 两侧各留 0.58 白键宽（=1 黑键宽）
-    this.margin = 0.58 * this.keyW;
+    // 两端留白固定：等于每屏 8 个白键时的黑键宽度（不随当前键数变化）
+    this.margin = vw * 0.58 / 9.16;
+    this.keyW = (vw - this.margin * 2) / this.count;
     this.strip.style.width = (WHITE_COUNT * this.keyW) + 'px';
     this.strip.style.setProperty('--key-w', this.keyW + 'px');
     this.strip.dataset.labels = this.keyW >= 30 ? 'all' : (this.keyW >= 17 ? 'c' : 'none');
