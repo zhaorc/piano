@@ -270,7 +270,7 @@ body {
   <div class="tb-group">
     <span class="tb-label">每屏</span>
     <button id="countMinus" class="tb-btn" aria-label="减少每屏键数">−</button>
-    <span id="countVal">14</span>
+    <span id="countVal">8</span>
     <button id="countPlus" class="tb-btn" aria-label="增加每屏键数">＋</button>
     <span class="tb-label">键</span>
   </div>
@@ -285,7 +285,7 @@ body {
   <section class="kb-row" id="rowBottom" aria-label="下排键盘"></section>
 </main>
 
-<div id="diag">v7</div>
+<div id="diag">v8</div>
 <div id="loader"><div class="spin"></div><p>正在准备音色…</p></div>
 
 </div>
@@ -906,8 +906,10 @@ class KeyboardRow {
     }
     this.tapeDimL = document.createElement('div');
     this.tapeDimL.className = 'tape-dim';
+    this.tapeDimL.style.left = '0';          // 左压暗层锚定左缘
     this.tapeDimR = document.createElement('div');
     this.tapeDimR.className = 'tape-dim';
+    this.tapeDimR.style.right = '0';         // 右压暗层锚定右缘（否则绝对定位会堆在左侧，盖住高亮区）
     this.tapeWin = document.createElement('div');
     this.tapeWin.className = 'tape-win';
     this.tape.appendChild(bks);
@@ -932,7 +934,7 @@ class KeyboardRow {
 (function () {
   const $ = s => document.querySelector(s);
   const rows = [];
-  let count = 14;          // 每屏白键数（两排联动）
+  let count = 8;           // 每屏白键数（两排联动），默认 8
   let loaderHidden = false;
 
   const whiteMidi = idx => {
@@ -1020,7 +1022,7 @@ class KeyboardRow {
     const diag = $('#diag');
     setInterval(() => {
       const bl = PianoAudio.baseLatency();
-      diag.textContent = 'v7 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
+      diag.textContent = 'v8 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
         + (bl != null ? '延迟~' + Math.round(bl * 1000) + 'ms · ' : '')
         + '音源 ' + PianoAudio.readyCount() + '/88'
         + (PianoAudio.dbg.worker ? '' : ' · worker不可用');
