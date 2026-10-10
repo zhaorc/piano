@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e1013">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>纸带钢琴</title>
+<style>
+/* ===== 纸带钢琴 —— 移动端触屏样式 ===== */
+:root {
+  --bg: #0b0d10;
+  --panel: #171a1f;
+  --panel-2: #22262c;
+  --line: #3a4048;
+  --fg: #dfe3e8;
+  --fg-dim: #9aa2ab;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+/* ===== 顶栏 ===== */
+#toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 6px 10px;
+  padding-top: calc(6px + env(safe-area-inset-top));
+  background: linear-gradient(#24282e, #14171b);
+  border-bottom: 1px solid #000;
+}
+
+.tb-group { display: flex; align-items: center; gap: 7px; }
+.tb-label { font-size: 12px; color: var(--fg-dim); }
+
+.tb-btn {
+  width: 30px; height: 30px;
+  border-radius: 15px;
+  border: 1px solid var(--line);
+  background: #2a2f36;
+  color: #e8edf2;
+  font-size: 17px;
+  line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.tb-btn:active { background: #3a414a; }
+.tb-btn:disabled { opacity: .3; }
+
+#countVal { min-width: 2ch; text-align: center; font-size: 15px; font-weight: 600; }
+
+.tb-chip {
+  padding: 5px 13px;
+  border-radius: 15px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: #cfd5db;
+  font-size: 13px;
+}
+.tb-chip.active { background: #2f6f43; border-color: #3f8f58; color: #dff5e4; }
+
+.tb-vol { margin-left: auto; }
+#volume { width: 110px; accent-color: #e0483e; }
+
+/* ===== 键盘区 ===== */
+#stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #000;
+  padding: 2px 0 env(safe-area-inset-bottom);
+}
+
+.kb-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 导航条（箭头 + 纸带） */
+.kb-nav {
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 2px 4px;
+  background: #14171b;
+}
+
+.nav-btn {
+  width: 36px;
+  border: none;
+  border-radius: 6px;
+  background: #1d2126;
+  color: #cfd5db;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+}
+.nav-btn svg { width: 20px; height: 20px; pointer-events: none; }
+.nav-btn:active { background: #2c323a; }
+.nav-btn:disabled { opacity: .26; }
+
+.kb-tape {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border-radius: 4px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+/* 键盘窗口 */
+.kb-view {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: #0a0c0e;
+  touch-action: none;
+}
+
+.kb-strip {
+  position: absolute;
+  top: 0; left: 0;
+  height: 100%;
+  will-change: transform;
+}
+
+.key { position: absolute; top: 0; }
+
+.key.white {
+  height: 100%;
+  background: linear-gradient(#f8f9fa 0%, #eef0f2 78%, #dce0e4 100%);
+  border-right: 1px solid #b3b9bf;
+  border-radius: 0 0 3px 3px;
+}
+.key.white.down {
+  background: linear-gradient(#dde3e8, #c9d1d8);
+  transform: translateY(1.5px);
+}
+
+.key.black {
+  height: 62%;
+  z-index: 2;
+  background: linear-gradient(#41464d, #16191d 68%, #000);
+  border: 1px solid #000;
+  border-top: none;
+  border-radius: 0 0 3px 3px;
+  box-shadow: 0 2px 3px rgba(0, 0, 0, .55);
+}
+.key.black.down {
+  background: linear-gradient(#2a2e33, #0a0c0f);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .5);
+  transform: translateY(2px);
+}
+
+/* 音名标签（八度绿/蓝交替，同参考图） */
+.lbl {
+  position: absolute;
+  bottom: 9%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: calc(var(--key-w) * 0.26);
+  font-weight: 700;
+  border-radius: 18%;
+  padding: 3% 7%;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.lbl.lg { background: #b9f0b3; color: #17691f; }
+.lbl.lb { background: #aee2f5; color: #0d5b83; }
+
+/* 窄屏/窄键：只标 C；更窄：全隐藏 */
+.kb-strip[data-labels="c"] .lbl,
+.kb-strip[data-labels="none"] .lbl { display: none; }
+.kb-strip[data-labels="c"] .key[data-c="1"] .lbl { display: flex; }
+body.hide-labels .lbl { display: none !important; }
+
+/* ===== 加载层 ===== */
+#loader {
+  position: fixed; inset: 0;
+  z-index: 50;
+  background: rgba(8, 10, 13, .84);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 12px;
+  color: #cfd5db; font-size: 14px;
+}
+.spin {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: 3px solid #39414b;
+  border-top-color: #e8edf2;
+  animation: spin .9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 竖屏提示（自动消失） */
+#hint {
+  position: fixed;
+  left: 50%; bottom: 16px;
+  transform: translateX(-50%);
+  background: rgba(20, 24, 29, .92);
+  color: var(--fg);
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 18px;
+  z-index: 40;
+  pointer-events: none;
+  opacity: 0;
+}
+@media (orientation: portrait) {
+  #hint { animation: hint 4s ease .6s forwards; }
+}
+@keyframes hint {
+  0% { opacity: 0; } 15% { opacity: 1; }
+  75% { opacity: 1; } 100% { opacity: 0; }
+}
+
+</style>
+</head>
+<body>
+
+<header id="toolbar">
+  <div class="tb-group">
+    <span class="tb-label">每屏</span>
+    <button id="countMinus" class="tb-btn" aria-label="减少每屏键数">−</button>
+    <span id="countVal">14</span>
+    <button id="countPlus" class="tb-btn" aria-label="增加每屏键数">＋</button>
+    <span class="tb-label">键</span>
+  </div>
+  <button id="labelToggle" class="tb-chip active" aria-pressed="true">标签</button>
+  <div class="tb-group tb-vol">
+    <span class="tb-label">音量</span>
+    <input id="volume" type="range" min="0" max="100" value="80" aria-label="音量">
+  </div>
+</header>
+
+<main id="stage">
+  <section class="kb-row" id="rowTop" aria-label="上排键盘"></section>
+  <section class="kb-row" id="rowBottom" aria-label="下排键盘"></section>
+</main>
+
+<div id="loader"><div class="spin"></div><p>正在准备音色…</p></div>
+<div id="hint">建议横屏使用，体验更佳</div>
+
+<script>
+'use strict';
+/*
+ * PianoAudio —— 合成钢琴音频引擎 v2（低延迟 + 音色优化）
+ *
+ * 延迟策略：
+ *  - 页面加载即创建 AudioContext（拿到设备真实采样率，音符按它渲染，零重采样）；
+ *  - 88 音按“离两排窗口中段的距离”优先后台渲染，每个宏任务只渲染 1 个音，
+ *    手指按住琴键期间完全暂停渲染 —— 触摸事件永远不会被渲染任务堵住；
+ *  - 单音渲染用定点相位累加 + 块状包络，比朴素写法快一个数量级，
+ *    即使按键抢在预渲染前到达，同步补渲染也只是几毫秒级。
+ *
+ * 音色模型（钢琴感）：
+ *  - 泛音列含弦不谐和（bending），幅度 k^-1.05 叠加 2.2kHz 共振峰；
+ *  - 每个泛音双段衰减：快成分（琴槌击弦瞬态）+ 慢成分（琴体余响），高泛音更快变暗；
+ *  - 低次泛音双弦微失谐产生自然拍频；琴槌噪声（亮瞬态 + 低通闷响）；
+ *  - 按键力度联动音量与低通亮度；键位声像（低音偏左高音偏右）。
+ */
+const PianoAudio = (() => {
+  const FIRST = 21, LAST = 108;   // A0 - C8
+  const MAX_VOICES = 24;
+  const TLEN = 16384, MASK = TLEN - 1, PSHIFT = 18;  // 32bit 相位，取高 14 位查表
+  const BLK = 32;                 // 包络块大小（样本数）
+
+  const SINE = new Float32Array(TLEN);
+  for (let i = 0; i < TLEN; i++) SINE[i] = Math.sin(2 * Math.PI * i / TLEN);
+
+  let ctx = null, master = null, hasPanner = false;
+  const pcm = new Map();          // midi -> { arr, sr }
+  const bufCache = new Map();     // midi -> AudioBuffer
+  const voices = new Map();       // midi -> { src, gain, t, on }
+  let volume = 0.8;
+  let busy = 0;                   // >0 演奏中，后台渲染让路
+  const dbg = { lastOn: 0, onCount: 0, lastRenderMs: 0, maxRenderMs: 0 };
+
+  const freq = m => 440 * Math.pow(2, (m - 69) / 12);
+
+  /* 创建音频设备（不需要手势；恢复播放才需要，见 unlock） */
+  function initDevice() {
+    if (ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    try { ctx = new AC({ latencyHint: 'interactive' }); }
+    catch (e) { ctx = new AC(); }
+    master = ctx.createGain();
+    master.gain.value = volume * volume;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 20; comp.ratio.value = 8;
+    comp.attack.value = 0.002; comp.release.value = 0.18;
+    master.connect(comp);
+    comp.connect(ctx.destination);
+    hasPanner = typeof ctx.createStereoPanner === 'function';
+  }
+
+  /* 首次手势/每次按下时调用：恢复上下文 + iOS 静音 buffer 解锁 */
+  function unlock() {
+    initDevice();
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    if (!unlock._done) {
+      const b = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const s = ctx.createBufferSource();
+      s.buffer = b; s.connect(ctx.destination); s.start(0);
+      unlock._done = true;
+    }
+  }
+
+  function addPartial(P, f, a, s1, s2, sr) {
+    if (f > sr * 0.45 || f <= 0) return;
+    P.push({ inc: Math.round(f * 4294967296 / sr), a, s1, s2 });
+  }
+
+  /* 合成单音 PCM（v2：双段衰减 + 不谐和泛音 + 共振峰 + 双弦失谐 + 琴槌噪声） */
+  function renderNote(m) {
+    if (pcm.has(m)) return;
+    const t0 = performance.now();
+    const sr = ctx ? ctx.sampleRate : 48000;
+    const f0 = freq(m) * (1 + (Math.random() - 0.5) * 0.0015);  // 每键微妙失谐，更像真琴
+    const dur = m < 36 ? 2.6 : m < 60 ? 2.2 : m < 84 ? 1.5 : 0.9;
+    const n = (dur * sr) | 0;
+    const out = new Float32Array(n);
+
+    const B = 0.0002 + 0.0007 * Math.pow((m - 21) / 87, 1.5);   // 弦不谐和系数
+    const Kmax = m < 48 ? 12 : m < 72 ? 10 : 6;
+    const K = Math.max(2, Math.min(Kmax, (10500 / f0) | 0));
+
+    const P = [];
+    const tau2Base = dur / 3.4;
+    for (let k = 1; k <= K; k++) {
+      const f = f0 * k * Math.sqrt(1 + B * k * k);
+      if (f > sr * 0.45) break;
+      const formant = 1 + 0.5 * Math.exp(-Math.pow((f - 2200) / 1800, 2)); // 音板共振峰
+      const a = Math.pow(k, -1.05) * formant;
+      const tau2 = tau2Base * Math.pow(k, -0.35);              // 慢成分：琴体余响
+      const tau1 = tau2 * 0.12 * Math.pow(k, -0.7);            // 快成分：击弦瞬态，高泛音更快
+      const s1 = Math.exp(-1 / (sr * tau1)), s2 = Math.exp(-1 / (sr * tau2));
+      addPartial(P, f, a, s1, s2, sr);
+      if (k <= 4 && f < 5000) addPartial(P, f * 1.0013, a * 0.5, s1, s2, sr); // 双弦拍频
+    }
+    const NP = P.length;
+    const inc = new Int32Array(NP), ph = new Int32Array(NP);
+    const amp = new Float32Array(NP), st1 = new Float32Array(NP), st2 = new Float32Array(NP);
+    for (let j = 0; j < NP; j++) {
+      inc[j] = P[j].inc;
+      amp[j] = P[j].a;
+      st1[j] = Math.pow(P[j].s1, BLK);
+      st2[j] = Math.pow(P[j].s2, BLK);
+    }
+    const e1 = new Float32Array(NP).fill(1);   // 快包络（击弦瞬态，对应 s1/tau1）
+    const e2 = new Float32Array(NP).fill(1);   // 慢包络（琴体余响，对应 s2/tau2）
+
+    // 琴槌噪声：1) 4ms 亮瞬态（粗高通） 2) 30ms 低通闷响，音高越低越闷
+    let lpH = 0;
+    const nClick = Math.min(n, (sr * 0.004) | 0);
+    for (let i = 0; i < nClick; i++) {
+      const w = Math.random() * 2 - 1;
+      out[i] += (w - lpH) * Math.exp(-i / (sr * 0.0012)) * 0.5;
+      lpH += (w - lpH) * 0.3;
+    }
+    {
+      let lp = 0;
+      const aLP = 1 - Math.exp(-2 * Math.PI * Math.min(3500, Math.max(300, f0 * 3)) / sr);
+      const nThunk = Math.min(n, (sr * 0.03) | 0);
+      const env = 0.32 * (0.4 + 0.6 * Math.exp(-f0 / 900));
+      for (let i = 0; i < nThunk; i++) {
+        lp += (Math.random() * 2 - 1 - lp) * aLP;
+        out[i] += lp * Math.exp(-i / (sr * 0.009)) * env;
+      }
+    }
+
+    // 主合成循环：定点相位 + 块状双段包络
+    const att = Math.max(1, (sr * 0.0025) | 0);
+    let blk = BLK;
+    for (let i = 0; i < n; i++) {
+      if (--blk === 0) {
+        blk = BLK;
+        for (let j = 0; j < NP; j++) { e1[j] *= st1[j]; e2[j] *= st2[j]; }
+      }
+      let s = 0;
+      for (let j = 0; j < NP; j++) {
+        if (e1[j] < 2e-3 && e2[j] < 2e-3) continue;   // 已衰减到不可闻的泛音直接跳过
+        const w = SINE[((ph[j] = (ph[j] + inc[j]) | 0) >>> PSHIFT) & MASK];
+        s += w * amp[j] * (e2[j] + 0.45 * e1[j]);
+      }
+      out[i] += (i < att ? s * i / att : s) * 0.30;
+    }
+
+    // 响度曲线（低音略响）+ 峰值归一 + 尾部淡出
+    let peak = 0;
+    for (let i = 0; i < n; i++) { const a = out[i] < 0 ? -out[i] : out[i]; if (a > peak) peak = a; }
+    const loud = 1.15 - 0.45 * (m - 21) / 87;
+    const g = peak > 0 ? 0.8 * loud / peak : 1;
+    for (let i = 0; i < n; i++) out[i] *= g;
+    const fade = Math.min(n, (sr * 0.05) | 0);
+    for (let i = 0; i < fade; i++) out[n - 1 - i] *= i / fade;
+
+    dbg.lastRenderMs = performance.now() - t0;
+    if (dbg.lastRenderMs > dbg.maxRenderMs) dbg.maxRenderMs = dbg.lastRenderMs;
+    pcm.set(m, { arr: out, sr });
+  }
+
+  function getBuffer(m) {
+    let buf = bufCache.get(m);
+    if (!buf) {
+      if (!pcm.has(m)) renderNote(m);
+      const d = pcm.get(m);
+      buf = ctx.createBuffer(1, d.arr.length, d.sr);
+      buf.getChannelData(0).set(d.arr);
+      bufCache.set(m, buf);
+    }
+    return buf;
+  }
+
+  function killVoice(v, rel) {
+    if (!v.on) return;
+    v.on = false;
+    const t = ctx.currentTime;
+    try {
+      v.gain.gain.setTargetAtTime(0, t, rel);
+      v.src.stop(t + rel * 6 + 0.05);
+    } catch (e) { /* 已停止 */ }
+  }
+
+  function noteOn(m, vel) {
+    unlock();
+    vel = Math.max(0.2, Math.min(1, vel || 1));
+    const buf = getBuffer(m);
+
+    const old = voices.get(m);
+    if (old) killVoice(old, 0.015);            // 同键快速重触发
+    if (voices.size >= MAX_VOICES) {           // 偷最旧的声音
+      let ov = null, ot = Infinity;
+      voices.forEach(v => { if (v.t < ot) { ot = v.t; ov = v; } });
+      if (ov) killVoice(ov, 0.02);
+    }
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    let node = src;
+    if (vel < 0.98) {                          // 力度→亮度
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1000 + 15000 * vel * vel;
+      lp.Q.value = 0.4;
+      node.connect(lp); node = lp;
+    }
+    const gain = ctx.createGain();             // 力度→音量
+    gain.gain.value = 0.35 + 0.65 * vel;
+    node.connect(gain);
+    let out = gain;
+    if (hasPanner) {                           // 键位声像
+      const pan = ctx.createStereoPanner();
+      pan.pan.value = Math.max(-0.6, Math.min(0.6, (m - 64.5) / 64.5 * 0.6));
+      gain.connect(pan); out = pan;
+    }
+    out.connect(master);
+
+    const t = ctx.currentTime;
+    src.start(t);
+    const rec = { src, gain, t, on: true };
+    src.onended = () => { if (voices.get(m) === rec) voices.delete(m); };
+    voices.set(m, rec);
+    dbg.lastOn = m; dbg.onCount++;
+  }
+
+  function noteOff(m) {
+    const v = voices.get(m);
+    if (v && v.on) {
+      v.on = false;
+      const t = ctx.currentTime;
+      v.gain.gain.setTargetAtTime(0, t, 0.09);   // 制音器自然衰减
+      try { v.src.stop(t + 0.6); } catch (e) {}
+    }
+  }
+
+  function releaseAll() {
+    voices.forEach(v => killVoice(v, 0.05));
+  }
+
+  function setVolume(v) {
+    volume = v;
+    if (master) master.gain.setTargetAtTime(v * v, ctx.currentTime, 0.02);
+  }
+
+  function setBusy(on) {
+    busy += on ? 1 : -1;
+    if (busy < 0) busy = 0;
+  }
+
+  /* 按到各窗口中段的距离优先渲染；每个宏任务只渲染 1 个音，演奏中暂停 */
+  function prepare(centerMidis, onProgress, onDone) {
+    const list = [];
+    for (let m = FIRST; m <= LAST; m++) list.push(m);
+    const dist = m => Math.min.apply(null, centerMidis.map(c => Math.abs(m - c)));
+    list.sort((a, b) => dist(a) - dist(b));
+    let i = 0;
+    (function chunk() {
+      if (i >= list.length) { onProgress && onProgress(1); onDone && onDone(); return; }
+      if (busy > 0) { setTimeout(chunk, 150); return; }
+      renderNote(list[i++]);
+      onProgress && onProgress(i / list.length);
+      setTimeout(chunk, 0);
+    })();
+  }
+
+  return {
+    initDevice, unlock, noteOn, noteOff, releaseAll, setVolume, prepare, setBusy,
+    ready: m => pcm.has(m),
+    readyCount: () => pcm.size,
+    state: () => (ctx ? ctx.state : 'none'),
+    baseLatency: () => (ctx && ctx.baseLatency != null ? ctx.baseLatency : null),
+    outputLatency: () => (ctx && ctx.outputLatency != null ? ctx.outputLatency : null),
+    sampleRate: () => (ctx ? ctx.sampleRate : null),
+    dbg
+  };
+})();
+
+</script>
+<script>
+'use strict';
+/*
+ * KeyboardRow —— 单排键盘组件
+ * 88 键一次性全部渲染进 DOM；切窗口只改内层容器 transform（GPU 平移，无重排），
+ * 因此单箭头/双箭头/纸带跳转都是当帧完成、零延迟。
+ */
+
+/* 88 键数据表：white=白键序号(0~51)，black 键 center 为以白键宽为单位的中心位置 */
+const PIANO_NOTES = (() => {
+  const BLACK_PC = { 1: 1, 3: 1, 6: 1, 8: 1, 10: 1 };
+  const DELTA = { 1: -0.10, 3: 0.10, 6: -0.10, 8: 0, 10: 0.10 }; // 黑键相对白键边界的偏移
+  const WHITE_NAME = { 0: 'C', 2: 'D', 4: 'E', 5: 'F', 7: 'G', 9: 'A', 11: 'B' };
+  const arr = [];
+  let w = 0, prevWhite = -1;
+  for (let m = 21; m <= 108; m++) {
+    const pc = m % 12;
+    const oct = Math.floor(m / 12) - 1;
+    const o = { midi: m, pc, oct, black: !!BLACK_PC[pc] };
+    if (!o.black) {
+      o.white = w++;
+      o.name = WHITE_NAME[pc] + oct;
+      prevWhite = w - 1;
+    } else {
+      o.center = prevWhite + 1 + DELTA[pc];
+    }
+    arr.push(o);
+  }
+  return arr;
+})();
+const WHITE_COUNT = 52;
+
+const NAV_SVG = {
+  pageLeft: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.2 4.6 4.8 12l7.4 7.4M19.4 4.6 12 12l7.4 7.4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  stepLeft: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.4 4.6 8 12l7.4 7.4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  stepRight: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.6 4.6 16 12l-7.4 7.4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  pageRight: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.8 4.6 19.2 12l-7.4 7.4M4.6 4.6 12 12l-7.4 7.4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+};
+
+/* 按住可连发的按钮（触屏友好） */
+function holdable(btn, fn) {
+  let t = 0, iv = 0;
+  const stop = () => { clearTimeout(t); clearInterval(iv); t = iv = 0; };
+  btn.addEventListener('pointerdown', e => {
+    if (btn.disabled) return;
+    e.preventDefault();
+    fn();
+    t = setTimeout(() => { iv = setInterval(fn, 110); }, 430);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => btn.addEventListener(ev, stop));
+}
+
+class KeyboardRow {
+  /**
+   * @param {Element} root   挂载容器
+   * @param {object}  opts   { audio }
+   */
+  constructor(root, opts) {
+    this.audio = opts.audio;
+    this.count = 14;      // 窗口内白键数
+    this.start = 0;       // 窗口起点（白键序号）
+    this.keyW = 0;
+    this.active = new Map();   // pointerId -> midi
+    this.keyEls = new Map();   // midi -> element
+
+    root.innerHTML =
+      '<div class="kb-nav">' +
+        `<button class="nav-btn" data-nav="pageLeft" aria-label="向前翻页">${NAV_SVG.pageLeft}</button>` +
+        `<button class="nav-btn" data-nav="stepLeft" aria-label="左移一个键">${NAV_SVG.stepLeft}</button>` +
+        '<canvas class="kb-tape" aria-label="键盘全览纸带，点按或拖动跳转"></canvas>' +
+        `<button class="nav-btn" data-nav="stepRight" aria-label="右移一个键">${NAV_SVG.stepRight}</button>` +
+        `<button class="nav-btn" data-nav="pageRight" aria-label="向后翻页">${NAV_SVG.pageRight}</button>` +
+      '</div>' +
+      '<div class="kb-view"><div class="kb-strip"></div></div>';
+
+    this.root = root;
+    this.nav = root.querySelector('.kb-nav');
+    this.view = root.querySelector('.kb-view');
+    this.strip = root.querySelector('.kb-strip');
+    this.tape = root.querySelector('.kb-tape');
+
+    this.buildKeys();
+    this.bindNav();
+    this.bindTape();
+    this.bindKeys();
+    this.layout();
+  }
+
+  buildKeys() {
+    const frag = document.createDocumentFragment();
+    for (const n of PIANO_NOTES) {
+      const el = document.createElement('div');
+      el.dataset.midi = n.midi;
+      if (!n.black) {
+        el.className = 'key white';
+        el.style.left = (n.white / WHITE_COUNT * 100) + '%';
+        el.style.width = (1 / WHITE_COUNT * 100) + '%';
+        if (n.pc === 0) el.dataset.c = '1';
+        const lbl = document.createElement('span');
+        lbl.className = 'lbl ' + (n.oct % 2 === 0 ? 'lg' : 'lb');
+        lbl.textContent = n.name;
+        el.appendChild(lbl);
+      } else {
+        el.className = 'key black';
+        el.style.left = ((n.center - 0.29) / WHITE_COUNT * 100) + '%';
+        el.style.width = (0.58 / WHITE_COUNT * 100) + '%';
+      }
+      this.keyEls.set(n.midi, el);
+      frag.appendChild(el);
+    }
+    this.strip.appendChild(frag);
+  }
+
+  maxStart() { return Math.max(0, WHITE_COUNT - this.count); }
+
+  clampStart(v) { return Math.max(0, Math.min(this.maxStart(), v)); }
+
+  setStart(v) {
+    this.start = this.clampStart(v);
+    this.applyWindow();
+  }
+
+  setCount(n) {
+    this.count = Math.max(7, Math.min(WHITE_COUNT, n));
+    this.start = this.clampStart(this.start);
+    this.layout();
+  }
+
+  /* 窗口切换：只写 transform，无过渡、无重建 → 零延迟 */
+  applyWindow() {
+    this.strip.style.transform = `translate3d(${(-this.start * this.keyW).toFixed(2)}px,0,0)`;
+    this.drawTape();
+    this.updateNav();
+  }
+
+  layout() {
+    const vw = this.view.clientWidth || 1;
+    this.keyW = vw / this.count;
+    this.strip.style.width = (WHITE_COUNT * this.keyW) + 'px';
+    this.strip.style.setProperty('--key-w', this.keyW + 'px');
+    this.strip.dataset.labels = this.keyW >= 30 ? 'all' : (this.keyW >= 17 ? 'c' : 'none');
+    this.applyWindow();
+  }
+
+  updateNav() {
+    const atL = this.start <= 0, atR = this.start >= this.maxStart();
+    this.nav.querySelector('[data-nav=pageLeft]').disabled = atL;
+    this.nav.querySelector('[data-nav=stepLeft]').disabled = atL;
+    this.nav.querySelector('[data-nav=stepRight]').disabled = atR;
+    this.nav.querySelector('[data-nav=pageRight]').disabled = atR;
+  }
+
+  bindNav() {
+    const act = {
+      stepLeft: () => this.setStart(this.start - 1),
+      stepRight: () => this.setStart(this.start + 1),
+      pageLeft: () => this.setStart(this.start - this.count),
+      pageRight: () => this.setStart(this.start + this.count)
+    };
+    this.nav.querySelectorAll('.nav-btn').forEach(btn => {
+      holdable(btn, act[btn.dataset.nav]);
+    });
+  }
+
+  bindTape() {
+    const jump = e => {
+      const r = this.tape.getBoundingClientRect();
+      if (!r.width) return;
+      const frac = (e.clientX - r.left) / r.width;
+      this.setStart(Math.round(frac * WHITE_COUNT - this.count / 2));
+    };
+    this.tape.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      try { this.tape.setPointerCapture(e.pointerId); } catch (err) {}
+      this._tapeHeld = true;
+      jump(e);
+    });
+    this.tape.addEventListener('pointermove', e => { if (this._tapeHeld) jump(e); });
+    ['pointerup', 'pointercancel'].forEach(ev =>
+      this.tape.addEventListener(ev, () => { this._tapeHeld = false; }));
+  }
+
+  bindKeys() {
+    const keyAt = (x, y) => {
+      const el = document.elementFromPoint(x, y);
+      if (!el || !this.strip.contains(el)) return null;
+      const m = el.dataset.midi;
+      return m ? { midi: +m, el } : null;
+    };
+    // 按键位置→力度：靠近键顶端力度大（音量+亮度联动）
+    const velocityOf = (k, e) => {
+      if (!e) return 1;
+      const r = k.el.getBoundingClientRect();
+      const relY = r.height ? (e.clientY - r.top) / r.height : 0;
+      const t = k.el.classList.contains('black')
+        ? relY
+        : Math.max(0, (relY - 0.6) / 0.4);   // 白键顶端被黑键占据，从黑键下沿起算
+      return Math.max(0.45, 1 - 0.55 * Math.min(1, t));
+    };
+    const press = (k, e) => {
+      this.audio.noteOn(k.midi, velocityOf(k, e));
+      k.el.classList.add('down');
+    };
+    const lift = midi => {
+      this.audio.noteOff(midi);
+      const el = this.keyEls.get(midi);
+      if (el) el.classList.remove('down');
+    };
+
+    this.view.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      try { this.view.setPointerCapture(e.pointerId); } catch (err) {}
+      const k = keyAt(e.clientX, e.clientY);
+      if (!k) return;
+      this.audio.setBusy(true);
+      press(k, e);
+      this.active.set(e.pointerId, k.midi);
+    });
+
+    this.view.addEventListener('pointermove', e => {
+      const cur = this.active.get(e.pointerId);
+      if (cur == null) return;
+      const k = keyAt(e.clientX, e.clientY);
+      if (!k || k.midi === cur) return;
+      lift(cur);           // 滑奏：按住滑过琴键连续发声
+      press(k, e);
+      this.active.set(e.pointerId, k.midi);
+    });
+
+    const end = e => {
+      const cur = this.active.get(e.pointerId);
+      if (cur == null) return;
+      lift(cur);
+      this.active.delete(e.pointerId);
+      this.audio.setBusy(false);
+    };
+    this.view.addEventListener('pointerup', end);
+    this.view.addEventListener('pointercancel', end);
+  }
+
+  /* 纸带：88 键缩略图，当前窗口高亮 */
+  drawTape() {
+    const r = this.tape.getBoundingClientRect();
+    if (!r.width) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.round(r.width), H = Math.round(r.height);
+    if (this.tape.width !== W * dpr || this.tape.height !== H * dpr) {
+      this.tape.width = W * dpr;
+      this.tape.height = H * dpr;
+    }
+    const g = this.tape.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const ww = W / WHITE_COUNT;
+
+    g.fillStyle = '#c9ced4';
+    g.fillRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(40,44,50,.85)';
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let i = 1; i < WHITE_COUNT; i++) {
+      const x = Math.round(i * ww) + 0.5;
+      g.moveTo(x, 0); g.lineTo(x, H);
+    }
+    g.stroke();
+
+    g.fillStyle = '#181c21';
+    for (const n of PIANO_NOTES) {
+      if (!n.black) continue;
+      g.fillRect(n.center * ww - 0.29 * ww, 0, 0.58 * ww, H * 0.62);
+    }
+
+    const wx = this.start * ww, wc = this.count * ww;
+    g.fillStyle = 'rgba(6,9,13,.72)';
+    g.fillRect(0, 0, wx, H);
+    g.fillRect(wx + wc, 0, W - wx - wc, H);
+    g.strokeStyle = '#e8eef4';
+    g.lineWidth = 1.5;
+    g.strokeRect(wx + 0.75, 0.75, wc - 1.5, H - 1.5);
+  }
+}
+
+</script>
+<script>
+'use strict';
+/* app.js —— 装配双排键盘、顶栏交互、音频解锁与自适应 */
+(function () {
+  const $ = s => document.querySelector(s);
+  const rows = [];
+  let count = 14;          // 每屏白键数（两排联动）
+  let loaderHidden = false;
+
+  const whiteMidi = idx => {
+    for (const n of PIANO_NOTES) if (!n.black && n.white === idx) return n.midi;
+    return 60;
+  };
+
+  function applyCount(v) {
+    count = Math.max(7, Math.min(52, v));
+    $('#countVal').textContent = count;
+    $('#countMinus').disabled = count <= 7;
+    $('#countPlus').disabled = count >= 52;
+    rows.forEach(r => r.setCount(count));
+  }
+
+  function hideLoader() {
+    if (loaderHidden) return;
+    loaderHidden = true;
+    $('#loader').style.display = 'none';
+  }
+
+  function init() {
+    PianoAudio.initDevice();   // 尽早创建：拿到设备真实采样率，渲染零重采样
+
+    // 上排默认低音区 C2 起，下排中音区 C4 起（窗口位置互相独立）
+    const top = new KeyboardRow($('#rowTop'), { audio: PianoAudio });
+    const bottom = new KeyboardRow($('#rowBottom'), { audio: PianoAudio });
+    rows.push(top, bottom);
+    applyCount(count);
+    top.setStart(9);      // C2
+    bottom.setStart(23);  // C4
+
+    // 顶栏：每屏键数（按住连发）、标签开关、音量
+    holdable($('#countMinus'), () => applyCount(count - 1));
+    holdable($('#countPlus'), () => applyCount(count + 1));
+    applyCount(count);
+
+    $('#labelToggle').addEventListener('click', e => {
+      const on = document.body.classList.toggle('hide-labels');
+      e.currentTarget.classList.toggle('active', !on);
+      e.currentTarget.setAttribute('aria-pressed', String(!on));
+    });
+    $('#volume').addEventListener('input', e => PianoAudio.setVolume(e.target.value / 100));
+
+    // 音频解锁：每次手势都尝试 resume（从后台回来也能恢复）
+    document.addEventListener('pointerdown', () => PianoAudio.unlock());
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('gesturestart', e => e.preventDefault()); // iOS 捏合
+
+    // 自适应：转屏/改窗口尺寸后重排
+    let rt = 0;
+    const relayout = () => { clearTimeout(rt); rt = setTimeout(() => rows.forEach(r => r.layout()), 60); };
+    window.addEventListener('resize', relayout);
+    window.addEventListener('orientationchange', relayout);
+
+    // 预渲染音源：优先两排窗口中段的音，之后向两侧扩展
+    $('#loader').style.display = 'flex';
+    const centers = [whiteMidi(top.start + Math.floor(count / 2)), whiteMidi(bottom.start + Math.floor(count / 2))];
+    PianoAudio.prepare(centers, p => { if (p >= 0.3) hideLoader(); }, hideLoader);
+    setTimeout(hideLoader, 2500); // 兜底：无论如何别挡着玩
+
+    // 测试钩子
+    window.__piano = { rows, audio: PianoAudio, applyCount };
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
+</script>
+</body>
+</html>
