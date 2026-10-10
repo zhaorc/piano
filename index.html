@@ -203,6 +203,20 @@ body {
 .kb-strip[data-labels="c"] .key[data-c="1"] .lbl { display: flex; }
 body.hide-labels .lbl { display: none !important; }
 
+/* 诊断条：版本 / 采样率 / 输出延迟 / 音源就绪数 */
+#diag {
+  position: fixed;
+  left: 8px; bottom: calc(4px + env(safe-area-inset-bottom));
+  z-index: 60;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(210, 218, 226, .55);
+  background: rgba(10, 12, 15, .45);
+  padding: 2px 7px;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
 /* ===== 加载层 ===== */
 #loader {
   position: fixed; inset: 0;
@@ -268,6 +282,7 @@ body.hide-labels .lbl { display: none !important; }
   <section class="kb-row" id="rowBottom" aria-label="下排键盘"></section>
 </main>
 
+<div id="diag">v3</div>
 <div id="loader"><div class="spin"></div><p>正在准备音色…</p></div>
 <div id="hint">建议横屏使用，体验更佳</div>
 
@@ -304,9 +319,113 @@ const PianoAudio = (() => {
   const voices = new Map();       // midi -> { src, gain, t, on }
   let volume = 0.8;
   let busy = 0;                   // >0 演奏中，后台渲染让路
-  const dbg = { lastOn: 0, onCount: 0, lastRenderMs: 0, maxRenderMs: 0 };
+  const dbg = { lastOn: 0, onCount: 0, lastRenderMs: 0, maxRenderMs: 0, worker: false };
 
   const freq = m => 440 * Math.pow(2, (m - 69) / 12);
+
+  /* ============ Worker 内的合成代码（与主线程 renderNote 保持一致）============
+   * 渲染全部放进 Worker：主线程只剩回播，慢手机上触摸事件也绝不会被堵。 */
+  const WORKER_DSP = `
+const TLEN=16384,MASK=TLEN-1,PSHIFT=18,BLK=32;
+const SINE=new Float32Array(TLEN);
+for(let i=0;i<TLEN;i++)SINE[i]=Math.sin(2*Math.PI*i/TLEN);
+const freq=(m)=>440*Math.pow(2,(m-69)/12);
+function addPartial(P,f,a,s1,s2,sr){
+  if(f>sr*0.45||f<=0)return;
+  P.push({inc:Math.round(f*4294967296/sr),a:a,s1:s1,s2:s2});
+}
+function renderNote(m,sr){
+  const f0=freq(m)*(1+(Math.random()-0.5)*0.0015);
+  const dur=m<36?2.3:m<60?2.2:m<84?1.5:0.9;
+  const n=(dur*sr)|0;
+  const out=new Float32Array(n);
+  const B=0.0002+0.0007*Math.pow((m-21)/87,1.5);
+  const Kmax=m<72?10:6;
+  const K=Math.max(2,Math.min(Kmax,(10500/f0)|0));
+  const P=[];const tau2Base=dur/3.4;
+  for(let k=1;k<=K;k++){
+    const f=f0*k*Math.sqrt(1+B*k*k);
+    if(f>sr*0.45)break;
+    const formant=1+0.5*Math.exp(-Math.pow((f-2200)/1800,2));
+    const a=Math.pow(k,-1.05)*formant;
+    const tau2=tau2Base*Math.pow(k,-0.35);
+    const tau1=tau2*0.12*Math.pow(k,-0.7);
+    const s1=Math.exp(-1/(sr*tau1)),s2=Math.exp(-1/(sr*tau2));
+    addPartial(P,f,a,s1,s2,sr);
+    if(k<=4&&f<5000)addPartial(P,f*1.0013,a*0.5,s1,s2,sr);
+  }
+  const NP=P.length;
+  const inc=new Int32Array(NP),ph=new Int32Array(NP);
+  const amp=new Float32Array(NP),st1=new Float32Array(NP),st2=new Float32Array(NP);
+  for(let j=0;j<NP;j++){
+    inc[j]=P[j].inc;amp[j]=P[j].a;
+    st1[j]=Math.pow(P[j].s1,BLK);st2[j]=Math.pow(P[j].s2,BLK);
+  }
+  const e1=new Float32Array(NP).fill(1),e2=new Float32Array(NP).fill(1);
+  let lpH=0;
+  const nClick=Math.min(n,(sr*0.004)|0);
+  for(let i=0;i<nClick;i++){
+    const w=Math.random()*2-1;
+    out[i]+=(w-lpH)*Math.exp(-i/(sr*0.0012))*0.5;
+    lpH+=(w-lpH)*0.3;
+  }
+  {
+    let lp=0;
+    const aLP=1-Math.exp(-2*Math.PI*Math.min(3500,Math.max(300,f0*3))/sr);
+    const nThunk=Math.min(n,(sr*0.03)|0);
+    const env=0.32*(0.4+0.6*Math.exp(-f0/900));
+    for(let i=0;i<nThunk;i++){
+      lp+=(Math.random()*2-1-lp)*aLP;
+      out[i]+=lp*Math.exp(-i/(sr*0.009))*env;
+    }
+  }
+  const att=Math.max(1,(sr*0.0025)|0);
+  let blk=BLK;
+  for(let i=0;i<n;i++){
+    if(--blk===0){blk=BLK;for(let j=0;j<NP;j++){e1[j]*=st1[j];e2[j]*=st2[j];}}
+    let s=0;
+    for(let j=0;j<NP;j++){
+      if(e1[j]<2e-3&&e2[j]<2e-3)continue;
+      const w=SINE[((ph[j]=(ph[j]+inc[j])|0)>>>PSHIFT)&MASK];
+      s+=w*amp[j]*(e2[j]+0.45*e1[j]);
+    }
+    out[i]+=(i<att?s*i/att:s)*0.30;
+  }
+  let peak=0;
+  for(let i=0;i<n;i++){const a=out[i]<0?-out[i]:out[i];if(a>peak)peak=a;}
+  const loud=1.15-0.45*(m-21)/87;
+  const g=peak>0?0.8*loud/peak:1;
+  for(let i=0;i<n;i++)out[i]*=g;
+  const fade=Math.min(n,(sr*0.05)|0);
+  for(let i=0;i<fade;i++)out[n-1-i]*=i/fade;
+  return out;
+}`;
+
+  let worker = null, workerReceived = 0, workerTotal = 0, progressCb = null;
+  const canWorker = typeof Worker !== 'undefined' && typeof Blob !== 'undefined'
+    && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function';
+
+  /* 启动 Worker 渲染全部 88 音；成功返回 true */
+  function startWorker(midis, sr, onProgress) {
+    if (!canWorker) return false;
+    try {
+      const src = "'use strict';\n" + WORKER_DSP +
+        "\nself.onmessage=(e)=>{const d=e.data;if(d.cmd==='render'){for(const m of d.midis){const arr=renderNote(m,d.sr);self.postMessage({m:m,arr:arr,sr:d.sr},[arr.buffer]);}self.postMessage({done:true});}};";
+      worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'application/javascript' })));
+      worker.onmessage = e => {
+        const d = e.data;
+        if (d.done) return;
+        pcm.set(d.m, { arr: d.arr, sr: d.sr });
+        workerReceived++;
+        onProgress && onProgress(workerReceived / workerTotal);
+      };
+      worker.onerror = () => { worker = null; };
+      workerTotal = midis.length; workerReceived = 0;
+      worker.postMessage({ cmd: 'render', midis, sr });
+      dbg.worker = true;
+      return true;
+    } catch (e) { worker = null; dbg.worker = false; return false; }
+  }
 
   /* 创建音频设备（不需要手势；恢复播放才需要，见 unlock） */
   function initDevice() {
@@ -347,12 +466,12 @@ const PianoAudio = (() => {
     const t0 = performance.now();
     const sr = ctx ? ctx.sampleRate : 48000;
     const f0 = freq(m) * (1 + (Math.random() - 0.5) * 0.0015);  // 每键微妙失谐，更像真琴
-    const dur = m < 36 ? 2.6 : m < 60 ? 2.2 : m < 84 ? 1.5 : 0.9;
+    const dur = m < 36 ? 2.3 : m < 60 ? 2.2 : m < 84 ? 1.5 : 0.9;
     const n = (dur * sr) | 0;
     const out = new Float32Array(n);
 
     const B = 0.0002 + 0.0007 * Math.pow((m - 21) / 87, 1.5);   // 弦不谐和系数
-    const Kmax = m < 48 ? 12 : m < 72 ? 10 : 6;
+    const Kmax = m < 72 ? 10 : 6;
     const K = Math.max(2, Math.min(Kmax, (10500 / f0) | 0));
 
     const P = [];
@@ -518,12 +637,15 @@ const PianoAudio = (() => {
     if (busy < 0) busy = 0;
   }
 
-  /* 按到各窗口中段的距离优先渲染；每个宏任务只渲染 1 个音，演奏中暂停 */
+  /* 渲染 88 音：优先 Worker（主线程零阻塞）；Worker 不可用时回退主线程分片 */
   function prepare(centerMidis, onProgress, onDone) {
+    initDevice();
     const list = [];
     for (let m = FIRST; m <= LAST; m++) list.push(m);
     const dist = m => Math.min.apply(null, centerMidis.map(c => Math.abs(m - c)));
     list.sort((a, b) => dist(a) - dist(b));
+    if (startWorker(list, ctx.sampleRate, onProgress)) return;
+
     let i = 0;
     (function chunk() {
       if (i >= list.length) { onProgress && onProgress(1); onDone && onDone(); return; }
@@ -891,11 +1013,21 @@ class KeyboardRow {
     window.addEventListener('resize', relayout);
     window.addEventListener('orientationchange', relayout);
 
-    // 预渲染音源：优先两排窗口中段的音，之后向两侧扩展
+    // 预渲染音源：Worker 里跑（主线程零负担），优先两排窗口中段的音
     $('#loader').style.display = 'flex';
     const centers = [whiteMidi(top.start + Math.floor(count / 2)), whiteMidi(bottom.start + Math.floor(count / 2))];
     PianoAudio.prepare(centers, p => { if (p >= 0.3) hideLoader(); }, hideLoader);
     setTimeout(hideLoader, 2500); // 兜底：无论如何别挡着玩
+
+    // 诊断条：确认设备上跑的版本、采样率、输出延迟、音源就绪数
+    const diag = $('#diag');
+    setInterval(() => {
+      const bl = PianoAudio.baseLatency();
+      diag.textContent = 'v3 · ' + Math.round((PianoAudio.sampleRate() || 0) / 1000) + 'kHz · '
+        + (bl != null ? '延迟~' + Math.round(bl * 1000) + 'ms · ' : '')
+        + '音源 ' + PianoAudio.readyCount() + '/88'
+        + (PianoAudio.dbg.worker ? '' : ' · worker不可用');
+    }, 500);
 
     // 测试钩子
     window.__piano = { rows, audio: PianoAudio, applyCount };
