@@ -115,27 +115,37 @@ body {
   flex-direction: column;
 }
 
-/* 导航条（箭头 + 纸带） */
+/* 导航条：两侧箭头组占留白宽度，纸带与键盘窗口严格等宽 */
 .kb-nav {
   height: 30px;
   flex: none;
   display: flex;
   align-items: stretch;
-  gap: 4px;
-  padding: 2px 4px;
+  gap: 0;
+  padding: 2px 0;
   background: #14171b;
 }
 
+.nav-grp {
+  display: flex;
+  gap: 2px;
+  width: var(--nav-margin, 53px);
+  flex: none;
+  min-width: 0;
+  padding: 0 1px;
+}
+
 .nav-btn {
-  width: 36px;
+  flex: 1;
+  min-width: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   background: #1d2126;
   color: #cfd5db;
   display: flex; align-items: center; justify-content: center;
   padding: 0;
 }
-.nav-btn svg { width: 20px; height: 20px; pointer-events: none; }
+.nav-btn svg { width: 15px; height: 15px; pointer-events: none; }
 .nav-btn:active { background: #2c323a; }
 .nav-btn:disabled { opacity: .26; }
 
@@ -829,11 +839,15 @@ class KeyboardRow {
 
     root.innerHTML =
       '<div class="kb-nav">' +
-        `<button class="nav-btn" data-nav="pageLeft" aria-label="向前翻页">${NAV_SVG.pageLeft}</button>` +
-        `<button class="nav-btn" data-nav="stepLeft" aria-label="左移一个键">${NAV_SVG.stepLeft}</button>` +
+        '<div class="nav-grp">' +
+          `<button class="nav-btn" data-nav="pageLeft" aria-label="向前翻页">${NAV_SVG.pageLeft}</button>` +
+          `<button class="nav-btn" data-nav="stepLeft" aria-label="左移一个键">${NAV_SVG.stepLeft}</button>` +
+        '</div>' +
         '<div class="kb-tape" aria-label="键盘全览纸带，点按或拖动跳转"></div>' +
-        `<button class="nav-btn" data-nav="stepRight" aria-label="右移一个键">${NAV_SVG.stepRight}</button>` +
-        `<button class="nav-btn" data-nav="pageRight" aria-label="向后翻页">${NAV_SVG.pageRight}</button>` +
+        '<div class="nav-grp">' +
+          `<button class="nav-btn" data-nav="stepRight" aria-label="右移一个键">${NAV_SVG.stepRight}</button>` +
+          `<button class="nav-btn" data-nav="pageRight" aria-label="向后翻页">${NAV_SVG.pageRight}</button>` +
+        '</div>' +
       '</div>' +
       '<div class="kb-view"><div class="kb-strip"></div></div>';
 
@@ -905,9 +919,8 @@ class KeyboardRow {
     this.margin = fullW * 0.58 / 9.16;          // 每屏 8 键时的黑键宽，固定不随键数变化
     this.view.style.marginLeft = this.margin.toFixed(2) + 'px';
     this.view.style.marginRight = this.margin.toFixed(2) + 'px';
-    // 导航条同款留白：纸带与键盘窗口左右对齐（箭头贴在窗口两端）
-    this.nav.style.paddingLeft = this.margin.toFixed(2) + 'px';
-    this.nav.style.paddingRight = this.margin.toFixed(2) + 'px';
+    // 导航条箭头组占据两侧留白，纸带与键盘窗口严格等宽对齐
+    this.nav.style.setProperty('--nav-margin', this.margin.toFixed(2) + 'px');
     const inner = this.view.clientWidth || 1;   // 读取触发重排，拿到收窄后的窗口宽度
     this.keyW = inner / this.count;             // 窗口内恰好 count 个白键
     this.strip.style.width = (WHITE_COUNT * this.keyW) + 'px';
@@ -1188,7 +1201,7 @@ class KeyboardRow {
       if (PianoAudio.setSampleMode(wantSample)) setToneUi(wantSample);
     });
 
-    console.log('[纸带钢琴] v17');
+    console.log('[纸带钢琴] v18');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
