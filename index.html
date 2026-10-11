@@ -715,7 +715,7 @@ function renderNote(m,sr){
 
   return {
     initDevice, unlock, noteOn, noteOff, releaseAll, setVolume, prepare, setBusy,
-    loadSamples, setSampleMode, inSampleMode,
+    loadSamples, setSampleMode, inSampleMode, whenRunning,
     ready: m => pcm.has(m),
     readyCount: () => pcm.size,
     state: () => (ctx ? ctx.state : 'none'),
@@ -1108,22 +1108,34 @@ class KeyboardRow {
     }
 
     // 音源加载：优先解码内嵌真实采样，失败则回落合成（Worker 渲染）。
-    // 蒙层在音源就绪前挡住按键，就绪后消失——之后第一次按键即真实采样、立即发声。
+    // 两段式蒙层：① 解码进度；② 解码完成后显示"点击屏幕开始"——点击这一手势用来
+    // 恢复音频上下文（部分设备首次恢复需数秒，藏在这里），恢复完成蒙层才消失，
+    // 之后第一次按键立即发声。
     const loader = $('#loader'), loaderText = $('#loaderText');
     loader.style.display = 'flex';
+    const armStart = () => {
+      loaderText.textContent = '点击屏幕开始演奏';
+      const begin = () => {
+        loaderText.textContent = '启动中…';
+        PianoAudio.unlock();
+        PianoAudio.whenRunning(hideLoader);
+        setTimeout(hideLoader, 3000); // 极端情况兜底
+      };
+      document.addEventListener('pointerdown', begin, { capture: true, once: true });
+    };
     const startSynth = () => {
       loaderText.textContent = '正在准备音色…';
       const centers = [whiteMidi(top.start + Math.floor(count / 2)), whiteMidi(bottom.start + Math.floor(count / 2))];
-      PianoAudio.prepare(centers, p => { if (p >= 0.3) hideLoader(); }, hideLoader);
-      setTimeout(hideLoader, 6000); // 兜底：窗口音早已就绪，不至于一直挡着
+      PianoAudio.prepare(centers, p => { if (p >= 0.3) armStart(); }, armStart);
+      setTimeout(armStart, 6000);
     };
     PianoAudio.loadSamples(
       p => { loaderText.textContent = '正在解码采样音色 ' + Math.round(p * 100) + '%'; },
-      hideLoader,
+      armStart,
       startSynth
     );
     setTimeout(() => {                         // 20s 兜底：解码异常卡死时也放行
-      if (PianoAudio.inSampleMode() || PianoAudio.readyCount() > 0) hideLoader();
+      if (PianoAudio.inSampleMode() || PianoAudio.readyCount() > 0) armStart();
       else startSynth();
     }, 20000);
 
@@ -1139,7 +1151,7 @@ class KeyboardRow {
       if (PianoAudio.setSampleMode(wantSample)) setToneUi(wantSample);
     });
 
-    console.log('[纸带钢琴] v13');
+    console.log('[纸带钢琴] v14');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
