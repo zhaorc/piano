@@ -1066,12 +1066,12 @@ class KeyboardRow {
     PianoAudio.initDevice();   // 尽早创建：拿到设备真实采样率，渲染零重采样
     fitApp();                  // 先定好尺寸再建键盘（行宽取决于视口方向）
 
-    // 上排默认低音区 C2 起，下排中音区 C4 起（窗口位置互相独立）
+    // 两排键盘键位一致：默认同从 C4 起，上下对齐
     const top = new KeyboardRow($('#rowTop'), { audio: PianoAudio });
     const bottom = new KeyboardRow($('#rowBottom'), { audio: PianoAudio });
     rows.push(top, bottom);
     applyCount(count);
-    top.setStart(9);      // C2
+    top.setStart(23);     // C4
     bottom.setStart(23);  // C4
 
     // 顶栏：每屏键数（按住连发）、音量
@@ -1151,7 +1151,7 @@ class KeyboardRow {
       if (PianoAudio.setSampleMode(wantSample)) setToneUi(wantSample);
     });
 
-    console.log('[纸带钢琴] v14');
+    console.log('[纸带钢琴] v15');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
