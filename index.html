@@ -332,6 +332,29 @@ const PianoAudio = (() => {
 
   const PC_NAME = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
   const noteName = m => PC_NAME[m % 12] + (Math.floor(m / 12) - 1);
+  function nameToMidi(name) {
+    const map = { C: 0, Db: 1, D: 2, Eb: 3, E: 4, F: 5, Gb: 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
+    const m = name.match(/^([A-G][b]?)(-?\d+)$/);
+    return m ? map[m[1]] + (parseInt(m[2], 10) + 1) * 12 : 60;
+  }
+
+  /* 把采样峰值归一到与合成音相同的响度曲线（0.8×loud），两种音色音量一致 */
+  function normalizeSample(ab, midi) {
+    const loud = 1.15 - 0.45 * (midi - 21) / 87;
+    const target = 0.8 * loud;
+    let peak = 0;
+    for (let c = 0; c < ab.numberOfChannels; c++) {
+      const d = ab.getChannelData(c);
+      for (let i = 0; i < d.length; i++) { const a = d[i] < 0 ? -d[i] : d[i]; if (a > peak) peak = a; }
+    }
+    if (peak > 0.001) {
+      const g = target / peak;
+      for (let c = 0; c < ab.numberOfChannels; c++) {
+        const d = ab.getChannelData(c);
+        for (let i = 0; i < d.length; i++) d[i] *= g;
+      }
+    }
+  }
 
   /* 解码内嵌的真实钢琴采样（base64 MP3 → AudioBuffer） */
   function loadSamples(onProgress, onDone, onFail) {
@@ -361,6 +384,7 @@ const PianoAudio = (() => {
       } catch (e) { failed++; finish(); return; }
       ctx.decodeAudioData(buf, ab => {
         if (aborted) return;
+        normalizeSample(ab, nameToMidi(name));
         sampleBufs.set(name, ab);
         done++;
         onProgress && onProgress(done / names.length);
@@ -716,6 +740,16 @@ function renderNote(m,sr){
   return {
     initDevice, unlock, noteOn, noteOff, releaseAll, setVolume, prepare, setBusy,
     loadSamples, setSampleMode, inSampleMode, whenRunning,
+    samplePeak: name => {
+      const ab = sampleBufs.get(name);
+      if (!ab) return null;
+      let peak = 0;
+      for (let c = 0; c < ab.numberOfChannels; c++) {
+        const d = ab.getChannelData(c);
+        for (let i = 0; i < d.length; i++) { const a = d[i] < 0 ? -d[i] : d[i]; if (a > peak) peak = a; }
+      }
+      return +peak.toFixed(3);
+    },
     ready: m => pcm.has(m),
     readyCount: () => pcm.size,
     state: () => (ctx ? ctx.state : 'none'),
@@ -1151,7 +1185,7 @@ class KeyboardRow {
       if (PianoAudio.setSampleMode(wantSample)) setToneUi(wantSample);
     });
 
-    console.log('[纸带钢琴] v15');
+    console.log('[纸带钢琴] v16');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
