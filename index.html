@@ -905,6 +905,9 @@ class KeyboardRow {
     this.margin = fullW * 0.58 / 9.16;          // 每屏 8 键时的黑键宽，固定不随键数变化
     this.view.style.marginLeft = this.margin.toFixed(2) + 'px';
     this.view.style.marginRight = this.margin.toFixed(2) + 'px';
+    // 导航条同款留白：纸带与键盘窗口左右对齐（箭头贴在窗口两端）
+    this.nav.style.paddingLeft = this.margin.toFixed(2) + 'px';
+    this.nav.style.paddingRight = this.margin.toFixed(2) + 'px';
     const inner = this.view.clientWidth || 1;   // 读取触发重排，拿到收窄后的窗口宽度
     this.keyW = inner / this.count;             // 窗口内恰好 count 个白键
     this.strip.style.width = (WHITE_COUNT * this.keyW) + 'px';
@@ -1185,7 +1188,7 @@ class KeyboardRow {
       if (PianoAudio.setSampleMode(wantSample)) setToneUi(wantSample);
     });
 
-    console.log('[纸带钢琴] v16');
+    console.log('[纸带钢琴] v17');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
