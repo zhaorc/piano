@@ -1291,10 +1291,12 @@ class KeyboardRow {
     // 音频解锁：捕获阶段尽早触发（先于琴键处理）；每次手势都尝试 resume（从后台回来也能恢复）
     document.addEventListener('pointerdown', () => PianoAudio.unlock(), { capture: true });
 
-    // 浏览器全屏：多路径尝试；点按屏幕/按键都算一次尝试，20 次内未成功
-    // 则关闭蒙层并提示手动全屏（部分浏览器全屏接口挂起不响应，无法强求）
+    // 真全屏：必须有新鲜的用户手势（点按/按键）才能请求成功。
+    // 每次手势计一次尝试并触发一组短重试（覆盖激活窗口内的暂时失败），
+    // 20 次手势仍未成功 → 关闭蒙层并提示用浏览器菜单手动全屏。
     let fsAttempts = 0;
     let manualHintShown = false;
+    let burstT = [];
     window.__fsError = '';
     const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
     const fsApiAvailable = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen ||
@@ -1342,38 +1344,35 @@ class KeyboardRow {
     document.addEventListener('fullscreenchange', onFsChange);
     document.addEventListener('webkitfullscreenchange', onFsChange);
 
-    /* 一次全屏尝试；启动中每 350ms 自动尝试一次，点按屏幕可加速，
-     * 20 次（约 7 秒）仍未成功 → 关闭蒙层并提示手动全屏 */
-    let fsTimer = 0;
-    const stopFsTimer = () => { clearInterval(fsTimer); fsTimer = 0; };
-    const tryFullscreen = () => {
-      if (isFs()) { stopFsTimer(); hideLoader(); return; }
-      if (fsAttempts >= 20) {
-        stopFsTimer();
-        if (!manualHintShown) {
-          manualHintShown = true;
-          hideLoader();
-          showToast('未能自动全屏，请用浏览器菜单的"全屏"或"添加到桌面"手动全屏');
-        }
-        return;
-      }
+    const clearBurst = () => { burstT.forEach(clearTimeout); burstT = []; };
+    const burst = () => {
+      clearBurst();
+      goFullscreen().catch(e => { window.__fsError = String((e && e.message) || e); });
+      // 激活窗口内的短重试（部分浏览器首次调用瞬时失败）
+      [250, 600, 1100, 1700].forEach(d => burstT.push(setTimeout(() => {
+        if (!isFs()) goFullscreen().catch(() => {});
+      }, d)));
+    };
+    const tryFsOnce = () => {
       fsAttempts++;
-      if (!loaderHidden) loaderText.textContent = '启动中… 自动尝试全屏 ' + fsAttempts + '/20（点按屏幕加速）';
-      goFullscreen().then(() => { lockLandscape(); hideLoader(); stopFsTimer(); }).catch(e => {
-        window.__fsError = String((e && e.message) || e);
-      });
+      if (!loaderHidden) loaderText.textContent = '启动中… 点按屏幕进入全屏（' + Math.min(fsAttempts, 20) + '/20）';
+      if (fsApiAvailable) burst();
+      if (fsAttempts >= 20 && !manualHintShown && !isFs()) {
+        manualHintShown = true;
+        hideLoader();
+        showToast('未能自动进入全屏，请用浏览器菜单的"全屏"或"添加到桌面"手动全屏');
+      }
     };
     fsBtn.addEventListener('click', () => {
-      if (isFs()) exitFullscreen();
-      else tryFullscreen();
+      if (isFs()) { exitFullscreen(); clearBurst(); }
+      else tryFsOnce();
     });
-    // 任何点按都是一次手势：立即尝试一次（点按加速），并解锁音频
+    // 任何点按/按键都是一次手势：解锁音频 + 计一次全屏尝试
     document.addEventListener('pointerdown', () => {
       PianoAudio.unlock();
-      if (!isFs() && !loaderHidden) tryFullscreen();
+      if (!isFs() && fsAttempts < 20) tryFsOnce();
       if (isFs()) lockLandscape();
     }, { capture: true });
-    document.addEventListener('gesturestart', e => e.preventDefault()); // iOS 捏合
     document.addEventListener('gesturestart', e => e.preventDefault()); // iOS 捏合
 
     // 自适应：转屏/改窗口尺寸后先重设 #app 尺寸（决定横/竖屏旋转），再重排键盘
@@ -1399,7 +1398,7 @@ class KeyboardRow {
     const loader = $('#loader');   // loaderText 已在全屏块声明
     loader.style.display = 'flex';
     const armStart = () => {
-      loaderText.textContent = '启动中… 自动尝试全屏 0/20';
+      loaderText.textContent = '启动中… 点按屏幕进入全屏（0/20）';
       if (!fsTimer) fsTimer = setInterval(tryFullscreen, 350);
     };
     const startSynth = () => {
@@ -1454,7 +1453,7 @@ class KeyboardRow {
     window.PianoCal.loadRemoteCal();
     window.PianoCal.onChange(() => rows.forEach(r => r.layout()));
 
-    console.log('[纸带钢琴] v29');
+    console.log('[纸带钢琴] v30');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
