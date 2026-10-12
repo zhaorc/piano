@@ -1,3 +1,68 @@
 [
-  { "match": "mate\\s?80\\s?pro", "pxmm": 5.171, "note": "HUAWEI Mate 80 Pro 实测（华为浏览器，2026-10）" }
+ {
+  "match": "mate\\s?80\\s?pro",
+  "pxmm": 5.171,
+  "note": "HUAWEI Mate 80 Pro（实测）",
+  "est": false
+ },
+ {
+  "match": "iphone",
+  "pxmm": 6.0,
+  "note": "iPhone 全系（SE/XR/11 等旧款约 +6%）",
+  "est": true
+ },
+ {
+  "match": "mate\\s?[4-7]0\\s?pro|\\bNOH-|\\bALN-|\\bVEL-|\\bDCO-|\\bCET-",
+  "pxmm": 5.152,
+  "note": "华为 Mate 40~70 Pro（估算）",
+  "est": true
+ },
+ {
+  "match": "\\bP[567]0\\b|\\bJAD-|\\bMNA-|nova\\s?[89]|nova\\s?1[0-9]",
+  "pxmm": 5.213,
+  "note": "华为 P50~P70 / nova（估算）",
+  "est": true
+ },
+ {
+  "match": "Magic[4-7]|\\bPGT-|\\bALI-|\\bANP-|\\bREA-|\\bPEG-",
+  "pxmm": 5.405,
+  "note": "荣耀 Magic / 数字系列（估算）",
+  "est": true
+ },
+ {
+  "match": "SM-?S(2[0-9]|9[0-9])",
+  "pxmm": 5.499,
+  "note": "三星 Galaxy S 系列（估算）",
+  "est": true
+ },
+ {
+  "match": "SM-?A[2-5]",
+  "pxmm": 5.203,
+  "note": "三星 Galaxy A 系列（估算）",
+  "est": true
+ },
+ {
+  "match": "Pixel [6-9]",
+  "pxmm": 6.274,
+  "note": "Google Pixel 6~9（估算）",
+  "est": true
+ },
+ {
+  "match": "M2\\d{3}[A-Z]|\\d{4}[A-Z]{2}",
+  "pxmm": 5.93,
+  "note": "小米 / Redmi 主流（估算）",
+  "est": true
+ },
+ {
+  "match": "OnePlus|CPH2\\d\\d|Find X",
+  "pxmm": 5.622,
+  "note": "一加 / OPPO Find（估算）",
+  "est": true
+ },
+ {
+  "match": "vivo|IQOO|iQOO|V2\\d{3}[A-Z]",
+  "pxmm": 5.434,
+  "note": "vivo / iQOO（估算）",
+  "est": true
+ }
 ]
