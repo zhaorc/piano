@@ -96,8 +96,6 @@ body {
 }
 .tb-chip.active { background: #2f6f43; border-color: #3f8f58; color: #dff5e4; }
 
-.tb-vol { margin-left: auto; }
-#volume { width: 110px; accent-color: #e0483e; }
 
 /* ===== 键盘区 ===== */
 #stage {
@@ -329,18 +327,14 @@ body {
 <header id="toolbar">
   <div class="tb-group">
     <span class="tb-label">每屏</span>
-    <button id="countMinus" class="tb-btn" aria-label="减少每屏键数">−</button>
-    <span id="countVal">8</span>
-    <button id="countPlus" class="tb-btn" aria-label="增加每屏键数">＋</button>
+    <button id="countMinus" class="tb-btn" aria-label="减少每屏键数" disabled>−</button>
+    <span id="countVal" class="locked">8</span>
+    <button id="countPlus" class="tb-btn" aria-label="增加每屏键数" disabled>＋</button>
     <span class="tb-label">键</span>
   </div>
   <button id="toneToggle" class="tb-chip active" aria-label="切换音色">采样</button>
   <button id="calBtn" class="tb-chip" aria-label="屏幕尺寸校准">校准</button>
   <button id="fsBtn" class="tb-chip" aria-label="全屏切换">全屏</button>
-  <div class="tb-group tb-vol">
-    <span class="tb-label">音量</span>
-    <input id="volume" type="range" min="0" max="100" value="80" aria-label="音量">
-  </div>
 </header>
 
 <main id="stage">
@@ -1244,14 +1238,6 @@ class KeyboardRow {
     return 60;
   };
 
-  function applyCount(v) {
-    count = Math.max(7, Math.min(52, v));
-    $('#countVal').textContent = count;
-    $('#countMinus').disabled = count <= 7;
-    $('#countPlus').disabled = count >= 52;
-    rows.forEach(r => r.setCount(count));
-  }
-
   function hideLoader() {
     if (loaderHidden) return;
     loaderHidden = true;
@@ -1277,16 +1263,11 @@ class KeyboardRow {
     const top = new KeyboardRow($('#rowTop'), { audio: PianoAudio });
     const bottom = new KeyboardRow($('#rowBottom'), { audio: PianoAudio });
     rows.push(top, bottom);
-    applyCount(count);
     top.setStart(23);     // C4
     bottom.setStart(23);  // C4
 
-    // 顶栏：每屏键数（按住连发）、音量
-    holdable($('#countMinus'), () => applyCount(count - 1));
-    holdable($('#countPlus'), () => applyCount(count + 1));
-    applyCount(count);
-
-    $('#volume').addEventListener('input', e => PianoAudio.setVolume(e.target.value / 100));
+    // 顶栏：键数锁定 8（按钮置灰仅展示），无音量调节（跟随系统媒体音量）
+    rows.forEach(r => r.setCount(8));
 
     // 全屏：点击开始弹奏的手势里请求全屏并锁横屏；顶栏"全屏"按钮可再次进入
     const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
@@ -1392,8 +1373,8 @@ class KeyboardRow {
       else startSynth();
     }, 20000);
 
-    console.log('[纸带钢琴] v32');
-    window.__piano = { rows, audio: PianoAudio, applyCount };
+    console.log('[纸带钢琴] v33');
+    window.__piano = { rows, audio: PianoAudio };
   }
 
   if (document.readyState === 'loading') {
