@@ -251,6 +251,35 @@ body {
 .kb-strip[data-labels="none"] .lbl { display: none; }
 .kb-strip[data-labels="c"] .key[data-c="1"] .lbl { display: flex; }
 
+/* ===== 校准弹窗 ===== */
+#calModal {
+  position: fixed; inset: 0;
+  z-index: 60;
+  background: rgba(5, 7, 10, .8);
+  display: flex; align-items: center; justify-content: center;
+}
+#calModal[hidden] { display: none; }
+.cal-box {
+  background: #1b1f25;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  max-width: 86%;
+}
+.cal-title { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+#calBar { height: 10px; background: #f4f8fc; border-radius: 2px; margin: 6px 0 10px; }
+.cal-hint { font-size: 12px; color: var(--fg-dim); line-height: 1.5; margin-bottom: 10px; }
+.cal-row { display: flex; gap: 8px; align-items: center; }
+#calInput {
+  width: 90px;
+  background: #10131a;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--fg);
+  font-size: 14px;
+  padding: 6px 8px;
+}
+
 /* ===== 加载蒙层：挡住按键直到音源就绪，消失后按键立即发声 ===== */
 #loader {
   position: fixed; inset: 0;
@@ -285,6 +314,7 @@ body {
     <span class="tb-label">键</span>
   </div>
   <button id="toneToggle" class="tb-chip active" aria-label="切换音色">采样</button>
+  <button id="calBtn" class="tb-chip" aria-label="屏幕尺寸校准">校准</button>
   <div class="tb-group tb-vol">
     <span class="tb-label">音量</span>
     <input id="volume" type="range" min="0" max="100" value="80" aria-label="音量">
@@ -297,6 +327,19 @@ body {
 </main>
 
 <div id="loader"><div class="spin"></div><p id="loaderText">正在解码采样音色…</p></div>
+
+<div id="calModal" hidden>
+  <div class="cal-box">
+    <p class="cal-title">屏幕尺寸校准</p>
+    <div id="calBar"></div>
+    <p class="cal-hint">请用直尺测量上方白条的实际宽度，输入毫米数后保存。<br>（当前校准系数：<span id="calK">1.00</span>）</p>
+    <div class="cal-row">
+      <input id="calInput" type="number" inputmode="decimal" min="20" max="300" placeholder="实测毫米数">
+      <button id="calSave" class="tb-chip active">保存</button>
+      <button id="calClose" class="tb-chip">关闭</button>
+    </div>
+  </div>
+</div>
 
 </div>
 
@@ -804,6 +847,35 @@ const PIANO_NOTES = (() => {
 })();
 const WHITE_COUNT = 52;
 
+/* 物理尺寸校准：浏览器不暴露真实 DPI，CSS mm 在部分手机浏览器（如华为）按 96dpi
+ * 折算而非物理尺寸。默认校准系数 1.3684 来自 Mate 80 Pro 华为浏览器实测
+ * （页面画 130mm 实际长 95mm → 130/95），可通过校准界面按实测修正，
+ * 存 localStorage 按设备各自生效。 */
+const MM_CAL_KEY = 'piano_mm_k';
+const IS_MOBILE = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '');
+let mmPxProbe = null;
+function mmPx() {
+  if (mmPxProbe == null) {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:absolute;visibility:hidden;width:100mm;height:1mm;';
+    document.body.appendChild(d);
+    mmPxProbe = d.getBoundingClientRect().width / 100;
+    d.remove();
+  }
+  return mmPxProbe;
+}
+function calK() {
+  let v = NaN;
+  try { v = parseFloat(localStorage.getItem(MM_CAL_KEY)); } catch (e) { /* 忽略 */ }
+  if (isNaN(v) || v <= 0) v = IS_MOBILE ? 1.3684 : 1;
+  return v;
+}
+function setCalK(k) {
+  try { localStorage.setItem(MM_CAL_KEY, String(k)); } catch (e) { /* 忽略 */ }
+}
+function mmToPx(mm) { return mm * mmPx() * calK(); }
+window.PianoCal = { mmPx, calK, setCalK };
+
 const NAV_SVG = {
   pageLeft: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.2 4.6 4.8 12l7.4 7.4M19.4 4.6 12 12l7.4 7.4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   stepLeft: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.4 4.6 8 12l7.4 7.4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -914,10 +986,13 @@ class KeyboardRow {
   }
 
   layout() {
-    // 窗口宽度由 CSS 定为物理 130mm 并水平居中（窄屏自动占满可用宽度），
-    // 这里只按实际像素宽换算键宽，保证窗口内恰好 count 个白键
-    const inner = this.view.clientWidth || 1;
-    this.keyW = inner / this.count;
+    // 窗口物理宽度 130mm：CSS mm 在部分手机浏览器不是物理值，用校准系数修正；
+    // 窄于该宽度的屏幕自动占满可用宽度
+    const w = Math.min(mmToPx(130), this.root.clientWidth || 1);
+    this.view.style.width = w.toFixed(2) + 'px';
+    this.nav.style.width = w.toFixed(2) + 'px';
+    const inner = this.view.clientWidth || 1;   // 读取触发重排，拿到最终窗口宽度
+    this.keyW = inner / this.count;             // 窗口内恰好 count 个白键
     this.strip.style.width = (WHITE_COUNT * this.keyW) + 'px';
     this.strip.style.setProperty('--key-w', this.keyW + 'px');
     this.strip.dataset.labels = this.keyW >= 30 ? 'all' : (this.keyW >= 17 ? 'c' : 'none');
@@ -1196,7 +1271,27 @@ class KeyboardRow {
       if (PianoAudio.setSampleMode(wantSample)) setToneUi(wantSample);
     });
 
-    console.log('[纸带钢琴] v20');
+    // 屏幕尺寸校准：量白条实际宽度，修正 CSS mm 与物理毫米的偏差
+    const calModal = $('#calModal'), calBar = $('#calBar'), calInput = $('#calInput');
+    const refreshCal = () => {
+      calBar.style.width = Math.round(window.PianoCal.mmPx() * 100) + 'px';
+      $('#calK').textContent = window.PianoCal.calK().toFixed(4);
+    };
+    $('#calBtn').addEventListener('click', () => {
+      refreshCal();
+      calModal.hidden = false;
+    });
+    $('#calClose').addEventListener('click', () => { calModal.hidden = true; });
+    $('#calSave').addEventListener('click', () => {
+      const v = parseFloat(calInput.value);
+      if (!(v > 20)) return;
+      const k = window.PianoCal.calK() * 100 / v;   // 白条画 100mm 实测 v mm → 修正系数
+      window.PianoCal.setCalK(k);
+      calModal.hidden = true;
+      rows.forEach(r => r.layout());
+    });
+
+    console.log('[纸带钢琴] v21');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
