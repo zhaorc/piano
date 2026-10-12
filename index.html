@@ -1313,6 +1313,14 @@ class KeyboardRow {
     const lockLandscape = () => {
       try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* 不支持则忽略 */ }
     };
+    const toastEl = $('#toast');
+    let toastT = 0;
+    const showToast = msg => {
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      clearTimeout(toastT);
+      toastT = setTimeout(() => toastEl.classList.remove('show'), 3200);
+    };
     const fsBtn = $('#fsBtn');
     if (!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)) {
       fsBtn.style.display = 'none';          // iOS Safari 无网页全屏 API
@@ -1347,17 +1355,26 @@ class KeyboardRow {
     // 音源加载：优先解码内嵌真实采样，失败则回落合成（Worker 渲染）。
     // 蒙层在音源就绪前挡住按键，就绪后提示"点击屏幕开始弹奏"——
     // 点击这一手势用来进入全屏、锁横屏并恢复音频，随后蒙层消失，立即弹奏。
+    // 注意：全屏请求挂到 pointerup/touchend/click（手指抬起）——触屏上按下不构成
+    // 浏览器认可的用户激活，抬起才有效，否则华为浏览器等会拒绝全屏。
     const loader = $('#loader'), loaderText = $('#loaderText');
     loader.style.display = 'flex';
+    let beginArmed = false;
+    const begin = () => {
+      if (beginArmed) return;
+      beginArmed = true;
+      goFullscreen().then(() => lockLandscape()).catch(e => {
+        window.__fsError = String((e && e.message) || e);
+        setTimeout(() => { if (!isFs()) showToast('此浏览器未进入全屏，可用顶栏"全屏"按钮重试'); }, 1200);
+      });
+      PianoAudio.unlock();
+      PianoAudio.whenRunning(hideLoader);
+      setTimeout(hideLoader, 3000); // 极端情况兜底
+    };
     const armStart = () => {
       loaderText.textContent = '点击屏幕开始弹奏';
-      const begin = () => {
-        goFullscreen().then(() => lockLandscape()).catch(() => {});
-        PianoAudio.unlock();
-        PianoAudio.whenRunning(hideLoader);
-        setTimeout(hideLoader, 3000); // 极端情况兜底
-      };
-      document.addEventListener('pointerdown', begin, { capture: true, once: true });
+      ['pointerup', 'touchend', 'click'].forEach(ev =>
+        document.addEventListener(ev, begin, { capture: true, once: true }));
     };
     const startSynth = () => {
       loaderText.textContent = '正在准备音色…';
@@ -1375,7 +1392,7 @@ class KeyboardRow {
       else startSynth();
     }, 20000);
 
-    console.log('[纸带钢琴] v31');
+    console.log('[纸带钢琴] v32');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
