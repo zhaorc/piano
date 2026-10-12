@@ -1316,17 +1316,24 @@ class KeyboardRow {
     const fsApiAvailable = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen ||
                                document.documentElement.webkitRequestFullScreen || document.body.webkitRequestFullscreen);
     const goFullscreen = () => {
-      const targets = [document.documentElement, document.body];
-      for (const el of targets) {
-        if (!el) continue;
-        const fns = [el.requestFullscreen, el.webkitRequestFullscreen, el.webkitRequestFullScreen].filter(Boolean);
-        for (const fn of fns) {
-          try {
-            const p = fn.call(el);
-            if (p && p.then) return p;
-            return Promise.resolve();          // 旧式 API 无返回值，状态由事件回调确认
-          } catch (e) { window.__fsError = String((e && e.message) || e); }
-        }
+      // 依次尝试：带选项的标准调用 → 无参标准 → WebKit 两种前缀 → body 上的旧接口
+      // （华为浏览器实测：标准调用返回的 Promise 永不结束，只能多路径碰）
+      const el = document.documentElement;
+      const body = document.body;
+      const tries = [
+        [el, () => el.requestFullscreen && el.requestFullscreen({ navigationUI: 'hide' })],
+        [el, () => el.requestFullscreen && el.requestFullscreen()],
+        [el, () => el.webkitRequestFullscreen && el.webkitRequestFullscreen()],
+        [el, () => el.webkitRequestFullScreen && el.webkitRequestFullScreen()],
+        [body, () => body.webkitRequestFullscreen && body.webkitRequestFullscreen()]
+      ];
+      for (const [el2, fn] of tries) {
+        if (!el2 || !fn) continue;
+        try {
+          const p = fn();
+          if (p && p.then) return p;
+          return Promise.resolve();          // 旧式 API 无返回值，状态由事件回调确认
+        } catch (e) { window.__fsError = String((e && e.message) || e); }
       }
       return Promise.reject(new Error(window.__fsError || '全屏API不可用'));
     };
@@ -1369,11 +1376,11 @@ class KeyboardRow {
       if (isFs()) return;
       window.__fsError = String((e && e.message) || e || '浏览器未响应');
       applyImmersive(true);
-      showToast('自动全屏未生效（' + window.__fsError.slice(0, 40) + '），已进入沉浸模式');
+      showToast('此浏览器全屏接口无响应，已进入沉浸模式；建议用菜单"添加到桌面"打开以获得真全屏');
     };
     document.addEventListener('pointerdown', () => {
       if (isFs()) { lockLandscape(); return; }
-      if (fsApiAvailable && fsRetries < 5) {       // 失败后每次点击静默重试
+      if (fsApiAvailable && fsRetries < 20) {      // 失败后每次点击静默重试
         fsRetries++;
         goFullscreen().then(() => lockLandscape()).catch(e => { window.__fsError = String((e && e.message) || e); });
       }
@@ -1466,7 +1473,7 @@ class KeyboardRow {
     window.PianoCal.loadRemoteCal();
     window.PianoCal.onChange(() => rows.forEach(r => r.layout()));
 
-    console.log('[纸带钢琴] v26');
+    console.log('[纸带钢琴] v27');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
