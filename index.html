@@ -332,7 +332,7 @@ body {
   <div class="cal-box">
     <p class="cal-title">屏幕尺寸校准</p>
     <div id="calBar"></div>
-    <p class="cal-hint">请用直尺测量上方白条的实际宽度，输入毫米数后保存。<br>（当前校准系数：<span id="calK">1.00</span>）</p>
+    <p class="cal-hint">请用直尺测量上方白条的实际宽度，输入毫米数后保存。<br>校准来源：<span id="calSrc">默认估算</span></p>
     <div class="cal-row">
       <input id="calInput" type="number" inputmode="decimal" min="20" max="300" placeholder="实测毫米数">
       <button id="calSave" class="tb-chip active">保存</button>
@@ -847,13 +847,18 @@ const PIANO_NOTES = (() => {
 })();
 const WHITE_COUNT = 52;
 
-/* 物理尺寸校准：浏览器不暴露真实 DPI，CSS mm 在部分手机浏览器（如华为）按 96dpi
- * 折算而非物理尺寸。默认校准系数 1.3684 来自 Mate 80 Pro 华为浏览器实测
- * （页面画 130mm 实际长 95mm → 130/95），可通过校准界面按实测修正，
- * 存 localStorage 按设备各自生效。 */
+/* 物理尺寸校准（三级优先）：手动（localStorage）> 机型库（远端 calibrations.json + 内置表）> 启发式默认。
+ * 浏览器不暴露真实 DPI，CSS mm 在部分手机浏览器（如华为）按 96dpi 折算而非物理尺寸。
+ * 内置 Mate 80 Pro 系数 5.171 px/mm 来自实测（页面画 130mm 实际长 95mm）。 */
 const MM_CAL_KEY = 'piano_mm_k';
 const IS_MOBILE = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '');
+const CAL_DEVICES = [
+  { match: 'mate\\s?80\\s?pro', pxmm: 5.171, note: 'HUAWEI Mate 80 Pro（实测）' }
+];
+let remoteCal = null;          // 远端校准表（calibrations.json），加载成功后优先生效
 let mmPxProbe = null;
+const calChangeCbs = [];
+
 function mmPx() {
   if (mmPxProbe == null) {
     const d = document.createElement('div');
@@ -864,17 +869,70 @@ function mmPx() {
   }
   return mmPxProbe;
 }
-function calK() {
+function hasManualCal() {
   let v = NaN;
   try { v = parseFloat(localStorage.getItem(MM_CAL_KEY)); } catch (e) { /* 忽略 */ }
-  if (isNaN(v) || v <= 0) v = IS_MOBILE ? 1.3684 : 1;
-  return v;
+  return !isNaN(v) && v > 0;
+}
+function findDeviceCal() {
+  const ua = navigator.userAgent || '';
+  const tables = [];
+  if (remoteCal) tables.push(...remoteCal);
+  tables.push(...CAL_DEVICES);
+  for (const e of tables) {
+    try { if (new RegExp(e.match, 'i').test(ua)) return e; } catch (err) { /* 非法表达式跳过 */ }
+  }
+  return null;
+}
+function manualK() {
+  let v = NaN;
+  try { v = parseFloat(localStorage.getItem(MM_CAL_KEY)); } catch (e) { /* 忽略 */ }
+  return isNaN(v) || v <= 0 ? null : v;
+}
+function calK() {
+  const manual = manualK();
+  if (manual) return manual;
+  const dev = findDeviceCal();
+  if (dev) return dev.pxmm / mmPx();
+  return IS_MOBILE ? 1.3684 : 1;
+}
+function calSource() {
+  if (manualK()) return '手动校准';
+  if (findDeviceCal()) return '机型自动' + (remoteCal && findDeviceCal()._remote ? '（远端）' : '');
+  return '默认估算';
 }
 function setCalK(k) {
   try { localStorage.setItem(MM_CAL_KEY, String(k)); } catch (e) { /* 忽略 */ }
 }
 function mmToPx(mm) { return mm * mmPx() * calK(); }
-window.PianoCal = { mmPx, calK, setCalK };
+
+/* 加载远端校准表（同目录 calibrations.json），变化后回调重排 */
+function loadRemoteCal() {
+  if (typeof fetch !== 'function') return;
+  fetch('calibrations.json', { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null))
+    .then(list => {
+      if (!Array.isArray(list) || !list.length) return;
+      const prev = calK();
+      remoteCal = list.map(e => ({ ...e, _remote: true }));
+      if (!hasManualCal() && calK() !== prev) calChangeCbs.forEach(cb => cb());
+    })
+    .catch(() => { /* 离线时用内置表 */ });
+}
+window.PianoCal = {
+  mmPx, calK, setCalK, loadRemoteCal,
+  matchDevice: ua => {
+    const tables = [];
+    if (remoteCal) tables.push(...remoteCal.map(e => ({ ...e, _remote: true })));
+    tables.push(...CAL_DEVICES);
+    for (const e of tables) {
+      try { if (new RegExp(e.match, 'i').test(ua)) return e; } catch (err) { /* 忽略 */ }
+    }
+    return null;
+  },
+  source: calSource,
+  onChange: cb => calChangeCbs.push(cb)
+};
 
 const NAV_SVG = {
   pageLeft: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.2 4.6 4.8 12l7.4 7.4M19.4 4.6 12 12l7.4 7.4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -1276,6 +1334,7 @@ class KeyboardRow {
     const refreshCal = () => {
       calBar.style.width = Math.round(window.PianoCal.mmPx() * 100) + 'px';
       $('#calK').textContent = window.PianoCal.calK().toFixed(4);
+      $('#calSrc').textContent = window.PianoCal.source();
     };
     $('#calBtn').addEventListener('click', () => {
       refreshCal();
@@ -1290,8 +1349,11 @@ class KeyboardRow {
       calModal.hidden = true;
       rows.forEach(r => r.layout());
     });
+    // 机型自动校准：加载远端校准表，命中机型或系数变化时自动重排
+    window.PianoCal.loadRemoteCal();
+    window.PianoCal.onChange(() => rows.forEach(r => r.layout()));
 
-    console.log('[纸带钢琴] v21');
+    console.log('[纸带钢琴] v22');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
