@@ -115,7 +115,12 @@ body {
   flex-direction: column;
 }
 
-/* 导航条：换档箭头内移贴窗口内缘，纸带居中，整组与键盘窗口对齐 */
+/* 导航条：与键盘窗口同宽同位（物理 130mm，水平居中），换档箭头贴窗口内缘 */
+.kb-nav, .kb-view {
+  width: min(130mm, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
 .kb-nav {
   height: 30px;
   flex: none;
@@ -829,7 +834,6 @@ class KeyboardRow {
     this.count = 14;      // 窗口内白键数
     this.start = 0;       // 窗口起点（白键序号）
     this.keyW = 0;
-    this.margin = 0;      // 两侧留白（1 个黑键宽）
     this.active = new Map();   // pointerId -> midi
     this.keyEls = new Map();   // midi -> element
 
@@ -910,16 +914,10 @@ class KeyboardRow {
   }
 
   layout() {
-    // 留白从整行宽度推导（view.clientWidth 会被自身边距缩窄，反复 layout 会漂移）
-    const fullW = this.root.clientWidth || 1;
-    this.margin = fullW * 0.58 / 9.16;          // 每屏 8 键时的黑键宽，固定不随键数变化
-    this.view.style.marginLeft = this.margin.toFixed(2) + 'px';
-    this.view.style.marginRight = this.margin.toFixed(2) + 'px';
-    // 换档箭头内移：导航条与键盘窗口对齐（箭头贴窗口内缘，纸带居中于箭头之间）
-    this.nav.style.paddingLeft = this.margin.toFixed(2) + 'px';
-    this.nav.style.paddingRight = this.margin.toFixed(2) + 'px';
-    const inner = this.view.clientWidth || 1;   // 读取触发重排，拿到收窄后的窗口宽度
-    this.keyW = inner / this.count;             // 窗口内恰好 count 个白键
+    // 窗口宽度由 CSS 定为物理 130mm 并水平居中（窄屏自动占满可用宽度），
+    // 这里只按实际像素宽换算键宽，保证窗口内恰好 count 个白键
+    const inner = this.view.clientWidth || 1;
+    this.keyW = inner / this.count;
     this.strip.style.width = (WHITE_COUNT * this.keyW) + 'px';
     this.strip.style.setProperty('--key-w', this.keyW + 'px');
     this.strip.dataset.labels = this.keyW >= 30 ? 'all' : (this.keyW >= 17 ? 'c' : 'none');
@@ -1198,7 +1196,7 @@ class KeyboardRow {
       if (PianoAudio.setSampleMode(wantSample)) setToneUi(wantSample);
     });
 
-    console.log('[纸带钢琴] v19');
+    console.log('[纸带钢琴] v20');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
