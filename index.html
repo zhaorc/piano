@@ -847,7 +847,7 @@ function renderNote(m,sr){
 /* 88 键数据表：white=白键序号(0~51)，black 键 center 为以白键宽为单位的中心位置 */
 const PIANO_NOTES = (() => {
   const BLACK_PC = { 1: 1, 3: 1, 6: 1, 8: 1, 10: 1 };
-  const DELTA = { 1: -0.10, 3: 0.10, 6: -0.10, 8: 0, 10: 0.10 }; // 黑键相对白键边界的偏移
+  // 黑键居中于相邻两个白键的交界线（正中间，无左右偏移）
   const WHITE_NAME = { 0: 'C', 2: 'D', 4: 'E', 5: 'F', 7: 'G', 9: 'A', 11: 'B' };
   const arr = [];
   let w = 0, prevWhite = -1;
@@ -860,7 +860,7 @@ const PIANO_NOTES = (() => {
       o.name = WHITE_NAME[pc] + oct;
       prevWhite = w - 1;
     } else {
-      o.center = prevWhite + 1 + DELTA[pc];
+      o.center = prevWhite + 1;   // 黑键中心 = 相邻白键交界线
     }
     arr.push(o);
   }
@@ -1389,7 +1389,7 @@ class KeyboardRow {
       else startSynth();
     }, 20000);
 
-    console.log('[纸带钢琴] v34');
+    console.log('[纸带钢琴] v35');
     window.__piano = { rows, audio: PianoAudio };
   }
 
