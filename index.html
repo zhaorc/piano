@@ -1309,7 +1309,23 @@ class KeyboardRow {
     const onFsChange = () => { fsBtn.classList.toggle('active', isFs()); if (isFs()) lockLandscape(); };
     document.addEventListener('fullscreenchange', onFsChange);
     document.addEventListener('webkitfullscreenchange', onFsChange);
-    fsBtn.addEventListener('click', () => { if (!isFs()) goFullscreen().catch(() => {}); });
+    const exitFullscreen = () => {
+      const ex = document.exitFullscreen || document.webkitExitFullscreen;
+      if (ex) { try { const p = ex.call(document); return p && p.then ? p : Promise.resolve(); } catch (e) {} }
+      return Promise.resolve();
+    };
+    // 乒乓按钮：未全屏→进全屏；已全屏→退出。用 pointerup（手指抬起=有效用户激活），
+    // 不依赖 click（部分浏览器/拦截场景下 click 不可靠）。
+    fsBtn.addEventListener('pointerup', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (isFs()) exitFullscreen();
+      else goFullscreen().then(() => lockLandscape()).catch(err => {
+        window.__fsError = String((err && err.message) || err);
+        showToast('未能' + (isFs() ? '退出' : '进入') + '全屏，可再试一次');
+      });
+    });
+    fsBtn.addEventListener('click', e => e.preventDefault());   // 防 click 双触发/移动延迟
 
     // 音频解锁：捕获阶段尽早触发（先于琴键处理）；每次手势都尝试 resume（从后台回来也能恢复）
     document.addEventListener('pointerdown', () => PianoAudio.unlock(), { capture: true });
@@ -1373,7 +1389,7 @@ class KeyboardRow {
       else startSynth();
     }, 20000);
 
-    console.log('[纸带钢琴] v33');
+    console.log('[纸带钢琴] v34');
     window.__piano = { rows, audio: PianoAudio };
   }
 
