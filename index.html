@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0e1013">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1306,17 +1308,27 @@ class KeyboardRow {
     // 音频解锁：捕获阶段尽早触发（先于琴键处理）；每次手势都尝试 resume（从后台回来也能恢复）
     document.addEventListener('pointerdown', () => PianoAudio.unlock(), { capture: true });
 
-    // 全屏：优先标准/WebKit 全屏 API；不支持或被拒绝时进入沉浸模式（隐藏顶栏，右上角 ⛶ 恢复）
+    // 全屏：多路径尝试（标准/WebKit/旧前缀，documentElement 与 body）；
+    // 失败时进入沉浸模式并在提示气泡里给出原因；可用时每次点击静默重试（最多 5 次）
+    let fsRetries = 0;
+    window.__fsError = '';
     const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
-    const fsApiAvailable = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+    const fsApiAvailable = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen ||
+                               document.documentElement.webkitRequestFullScreen || document.body.webkitRequestFullscreen);
     const goFullscreen = () => {
-      const el = document.documentElement;
-      const req = el.requestFullscreen || el.webkitRequestFullscreen;
-      if (!req) return Promise.reject(new Error('unsupported'));
-      try {
-        const p = req.call(el);
-        return p && p.then ? p : Promise.resolve();
-      } catch (e) { return Promise.reject(e); }
+      const targets = [document.documentElement, document.body];
+      for (const el of targets) {
+        if (!el) continue;
+        const fns = [el.requestFullscreen, el.webkitRequestFullscreen, el.webkitRequestFullScreen].filter(Boolean);
+        for (const fn of fns) {
+          try {
+            const p = fn.call(el);
+            if (p && p.then) return p;
+            return Promise.resolve();          // 旧式 API 无返回值，状态由事件回调确认
+          } catch (e) { window.__fsError = String((e && e.message) || e); }
+        }
+      }
+      return Promise.reject(new Error(window.__fsError || '全屏API不可用'));
     };
     const exitFullscreen = () => {
       const ex = document.exitFullscreen || document.webkitExitFullscreen;
@@ -1345,20 +1357,27 @@ class KeyboardRow {
         exitFullscreen();
         applyImmersive(false);
       } else if (fsApiAvailable) {
-        goFullscreen().catch(() => { applyImmersive(true); showToast('该浏览器限制了自动全屏，已进入沉浸模式'); });
+        goFullscreen().catch(e => { window.__fsError = String((e && e.message) || e); applyImmersive(true); showToast('自动全屏未生效（' + window.__fsError.slice(0, 40) + '），已进入沉浸模式'); });
       } else {
+        window.__fsError = '全屏API不可用';
         applyImmersive(true);
         showToast('此浏览器不支持全屏 API，已进入沉浸模式');
       }
     });
     $('#immersiveBtn').addEventListener('click', () => applyImmersive(false));
-    const onFsFail = () => {
-      if (!isFs()) {
-        applyImmersive(true);
-        showToast('该浏览器限制了自动全屏，已进入沉浸模式（右上角 ⛶ 恢复控制栏）');
-      }
+    const onFsFail = e => {
+      if (isFs()) return;
+      window.__fsError = String((e && e.message) || e || '浏览器未响应');
+      applyImmersive(true);
+      showToast('自动全屏未生效（' + window.__fsError.slice(0, 40) + '），已进入沉浸模式');
     };
-    document.addEventListener('pointerdown', () => { if (isFs()) lockLandscape(); });
+    document.addEventListener('pointerdown', () => {
+      if (isFs()) { lockLandscape(); return; }
+      if (fsApiAvailable && fsRetries < 5) {       // 失败后每次点击静默重试
+        fsRetries++;
+        goFullscreen().then(() => lockLandscape()).catch(e => { window.__fsError = String((e && e.message) || e); });
+      }
+    });
     document.addEventListener('gesturestart', e => e.preventDefault()); // iOS 捏合
 
     // 自适应：转屏/改窗口尺寸后先重设 #app 尺寸（决定横/竖屏旋转），再重排键盘
@@ -1447,7 +1466,7 @@ class KeyboardRow {
     window.PianoCal.loadRemoteCal();
     window.PianoCal.onChange(() => rows.forEach(r => r.layout()));
 
-    console.log('[纸带钢琴] v25');
+    console.log('[纸带钢琴] v26');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
