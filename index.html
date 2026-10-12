@@ -282,23 +282,6 @@ body {
   padding: 6px 8px;
 }
 
-/* ===== 沉浸模式：不支持全屏 API 的浏览器隐藏顶栏，右上角小按钮恢复 ===== */
-body.immersive #toolbar { display: none; }
-#immersiveBtn {
-  position: fixed;
-  top: calc(6px + env(safe-area-inset-top)); right: 8px;
-  z-index: 45;
-  width: 30px; height: 30px;
-  border-radius: 15px;
-  border: none;
-  background: rgba(29, 33, 38, .5);
-  color: #9fb0bf;
-  font-size: 15px;
-  display: none;
-  align-items: center; justify-content: center;
-}
-body.immersive #immersiveBtn { display: flex; }
-
 #toast {
   position: fixed;
   left: 50%; bottom: calc(18px + env(safe-area-inset-bottom));
@@ -367,8 +350,6 @@ body.immersive #immersiveBtn { display: flex; }
 
 <div id="loader"><div class="spin"></div><p id="loaderText">正在解码采样音色…</p></div>
 
-<button id="immersiveBtn" aria-label="显示控制栏">⛶</button>
-<div id="toast"></div>
 
 <div id="calModal" hidden>
   <div class="cal-box">
@@ -1308,18 +1289,18 @@ class KeyboardRow {
     // 音频解锁：捕获阶段尽早触发（先于琴键处理）；每次手势都尝试 resume（从后台回来也能恢复）
     document.addEventListener('pointerdown', () => PianoAudio.unlock(), { capture: true });
 
-    // 全屏：多路径尝试（标准/WebKit/旧前缀，documentElement 与 body）；
-    // 失败时进入沉浸模式并在提示气泡里给出原因；可用时每次点击静默重试（最多 5 次）
-    let fsRetries = 0;
+    // 浏览器全屏：多路径尝试；点按屏幕/按键都算一次尝试，20 次内未成功
+    // 则关闭蒙层并提示手动全屏（部分浏览器全屏接口挂起不响应，无法强求）
+    let fsAttempts = 0;
+    let manualHintShown = false;
     window.__fsError = '';
     const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
     const fsApiAvailable = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen ||
                                document.documentElement.webkitRequestFullScreen || document.body.webkitRequestFullscreen);
     const goFullscreen = () => {
-      // 依次尝试：带选项的标准调用 → 无参标准 → WebKit 两种前缀 → body 上的旧接口
-      // （华为浏览器实测：标准调用返回的 Promise 永不结束，只能多路径碰）
       const el = document.documentElement;
       const body = document.body;
+      // 依次尝试：带选项的标准调用 → 无参标准 → WebKit 两种前缀 → body 上的旧接口
       const tries = [
         [el, () => el.requestFullscreen && el.requestFullscreen({ navigationUI: 'hide' })],
         [el, () => el.requestFullscreen && el.requestFullscreen()],
@@ -1345,46 +1326,45 @@ class KeyboardRow {
     const lockLandscape = () => {
       try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* 不支持则忽略 */ }
     };
-    const applyImmersive = on => document.body.classList.toggle('immersive', on);
     const toastEl = $('#toast');
     let toastT = 0;
     const showToast = msg => {
       toastEl.textContent = msg;
       toastEl.classList.add('show');
       clearTimeout(toastT);
-      toastT = setTimeout(() => toastEl.classList.remove('show'), 2800);
+      toastT = setTimeout(() => toastEl.classList.remove('show'), 3200);
     };
     const fsBtn = $('#fsBtn');
-    const refreshFsUi = () => fsBtn.classList.toggle('active', isFs());
-    const onFsChange = () => { refreshFsUi(); if (isFs()) lockLandscape(); };
+    const loaderText = $('#loaderText');
+    const onFsChange = () => { fsBtn.classList.toggle('active', isFs()); if (isFs()) { lockLandscape(); hideLoader(); } };
     document.addEventListener('fullscreenchange', onFsChange);
     document.addEventListener('webkitfullscreenchange', onFsChange);
-    fsBtn.addEventListener('click', () => {
-      if (isFs()) {
-        exitFullscreen();
-        applyImmersive(false);
-      } else if (fsApiAvailable) {
-        goFullscreen().catch(e => { window.__fsError = String((e && e.message) || e); applyImmersive(true); showToast('自动全屏未生效（' + window.__fsError.slice(0, 40) + '），已进入沉浸模式'); });
-      } else {
-        window.__fsError = '全屏API不可用';
-        applyImmersive(true);
-        showToast('此浏览器不支持全屏 API，已进入沉浸模式');
-      }
-    });
-    $('#immersiveBtn').addEventListener('click', () => applyImmersive(false));
-    const onFsFail = e => {
+
+    /* 一次全屏尝试（每次点按/按键调用一次），20 次未成功 → 关蒙层 + 提示手动全屏 */
+    const tryFullscreen = () => {
       if (isFs()) return;
-      window.__fsError = String((e && e.message) || e || '浏览器未响应');
-      applyImmersive(true);
-      showToast('此浏览器全屏接口无响应，已进入沉浸模式；建议用菜单"添加到桌面"打开以获得真全屏');
+      fsAttempts++;
+      if (!loaderHidden) loaderText.textContent = '启动中… 全屏尝试 ' + Math.min(fsAttempts, 20) + '/20，点按屏幕加速';
+      goFullscreen().then(() => { lockLandscape(); hideLoader(); }).catch(e => {
+        window.__fsError = String((e && e.message) || e);
+        if (fsAttempts >= 20 && !manualHintShown) {
+          manualHintShown = true;
+          hideLoader();
+          showToast('未能自动全屏，请用浏览器菜单的"全屏"或"添加到桌面"手动全屏');
+        }
+      });
     };
-    document.addEventListener('pointerdown', () => {
-      if (isFs()) { lockLandscape(); return; }
-      if (fsApiAvailable && fsRetries < 20) {      // 失败后每次点击静默重试
-        fsRetries++;
-        goFullscreen().then(() => lockLandscape()).catch(e => { window.__fsError = String((e && e.message) || e); });
-      }
+    fsBtn.addEventListener('click', () => {
+      if (isFs()) exitFullscreen();
+      else tryFullscreen();
     });
+    // 任何点按都是一次手势：优先尝试全屏（蒙层期点蒙层同样计入）
+    document.addEventListener('pointerdown', () => {
+      PianoAudio.unlock();
+      if (!isFs() && fsAttempts < 20) tryFullscreen();
+      if (isFs()) lockLandscape();
+    }, { capture: true });
+    document.addEventListener('gesturestart', e => e.preventDefault()); // iOS 捏合
     document.addEventListener('gesturestart', e => e.preventDefault()); // iOS 捏合
 
     // 自适应：转屏/改窗口尺寸后先重设 #app 尺寸（决定横/竖屏旋转），再重排键盘
@@ -1407,19 +1387,10 @@ class KeyboardRow {
     // 两段式蒙层：① 解码进度；② 解码完成后显示"点击屏幕开始"——点击这一手势用来
     // 恢复音频上下文（部分设备首次恢复需数秒，藏在这里），恢复完成蒙层才消失，
     // 之后第一次按键立即发声。
-    const loader = $('#loader'), loaderText = $('#loaderText');
+    const loader = $('#loader');   // loaderText 已在全屏块声明
     loader.style.display = 'flex';
     const armStart = () => {
-      loaderText.textContent = '点击屏幕开始演奏';
-      const begin = () => {
-        loaderText.textContent = '启动中…';
-        goFullscreen().then(() => lockLandscape()).catch(onFsFail);   // 借点击手势进全屏+锁横屏
-        setTimeout(onFsFail, 900);                                     // 全屏被拒/未生效 → 沉浸模式兜底
-        PianoAudio.unlock();
-        PianoAudio.whenRunning(hideLoader);
-        setTimeout(hideLoader, 3000); // 极端情况兜底
-      };
-      document.addEventListener('pointerdown', begin, { capture: true, once: true });
+      loaderText.textContent = '启动中… 点按屏幕加速全屏（0/20）';
     };
     const startSynth = () => {
       loaderText.textContent = '正在准备音色…';
@@ -1473,7 +1444,7 @@ class KeyboardRow {
     window.PianoCal.loadRemoteCal();
     window.PianoCal.onChange(() => rows.forEach(r => r.layout()));
 
-    console.log('[纸带钢琴] v27');
+    console.log('[纸带钢琴] v28');
     window.__piano = { rows, audio: PianoAudio, applyCount };
   }
 
