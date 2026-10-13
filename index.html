@@ -206,7 +206,7 @@ body {
 .key.white {
   height: 100%;
   background: linear-gradient(#f8f9fa 0%, #eef0f2 78%, #dce0e4 100%);
-  border-right: 1px solid #b3b9bf;
+  border-right: 2px solid #0b0d10;   /* 白键间隔 2px（透出页面底色） */
   border-radius: 0 0 3px 3px;
 }
 .key.white.down {
@@ -1389,7 +1389,7 @@ class KeyboardRow {
       else startSynth();
     }, 20000);
 
-    console.log('[纸带钢琴] v35');
+    console.log('[纸带钢琴] v36');
     window.__piano = { rows, audio: PianoAudio };
   }
 
