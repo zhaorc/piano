@@ -115,6 +115,9 @@ body {
   flex-direction: column;
 }
 
+/* 对弹模式：下排旋转 180° 朝向对面玩家，两人隔机各弹一排 */
+.kb-row.flip { transform: rotate(180deg); }
+
 /* 导航条：与键盘窗口同宽同位（物理 130mm，水平居中），换档箭头贴窗口内缘 */
 .kb-nav, .kb-view {
   width: min(130mm, 100%);
@@ -339,7 +342,7 @@ body {
 
 <main id="stage">
   <section class="kb-row" id="rowTop" aria-label="上排键盘"></section>
-  <section class="kb-row" id="rowBottom" aria-label="下排键盘"></section>
+  <section class="kb-row flip" id="rowBottom" aria-label="下排键盘（对弹：旋转180°朝向对面玩家）"></section>
 </main>
 
 <div id="loader"><div class="spin"></div><p id="loaderText">正在解码采样音色…</p></div>
@@ -983,6 +986,7 @@ class KeyboardRow {
    */
   constructor(root, opts) {
     this.audio = opts.audio;
+    this.rev = root.classList.contains('flip');   // 对弹行（旋转180°）：力度/纸带方向需反转
     this.count = 14;      // 窗口内白键数
     this.start = 0;       // 窗口起点（白键序号）
     this.keyW = 0;
@@ -1103,7 +1107,11 @@ class KeyboardRow {
     const jump = e => {
       const r = this.tape.getBoundingClientRect();
       if (!r.width) return;
-      const frac = (e.clientX - r.left) / r.width;
+      // 页面竖屏时整体旋转 90°，纸带在屏幕上竖向排布：沿带方向改用 clientY
+      let frac = window.innerHeight > window.innerWidth
+        ? (e.clientY - r.top) / r.height
+        : (e.clientX - r.left) / r.width;
+      if (this.rev) frac = 1 - frac;   // 对弹行旋转 180°：沿带视觉方向相反
       this.setStart(Math.round(frac * WHITE_COUNT - this.count / 2));
     };
     this.tape.addEventListener('pointerdown', e => {
@@ -1136,6 +1144,7 @@ class KeyboardRow {
       } else {
         relY = (e.clientY - r.top) / (r.height || 1);
       }
+      if (this.rev) relY = 1 - relY;   // 对弹行旋转 180°，键顶方向反转
       const t = k.el.classList.contains('black')
         ? relY
         : Math.max(0, (relY - 0.6) / 0.4);   // 白键顶端被黑键占据，从黑键下沿起算
@@ -1389,7 +1398,7 @@ class KeyboardRow {
       else startSynth();
     }, 20000);
 
-    console.log('[纸带钢琴] v36');
+    console.log('[纸带钢琴] v37 对弹');
     window.__piano = { rows, audio: PianoAudio };
   }
 
