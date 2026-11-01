@@ -1399,7 +1399,52 @@ class KeyboardRow {
       else startSynth();
     }, 20000);
 
-    console.log('[纸带钢琴] v39 对弹');
+    // 延迟诊断面板（隐藏功能：连点顶栏"采样"按钮 5 次呼出，再点关闭）。
+    // 用于在真机上定位按键延迟：outputLatency 大 = 设备/蓝牙输出慢；
+    // 调度慢 = 主线程被拖住；音源回落合成 = 采样解码未完成。
+    const toneBtn = $('#toneToggle');
+    let taps = 0, tapT = 0, diagEl = null, diagSched = null;
+    const msStr = v => (v == null ? '—' : Math.round(v * 1000) + 'ms');
+    const renderDiag = () => {
+      const d = PianoAudio.dbg || {};
+      diagEl.innerHTML =
+        '<b>延迟诊断</b><br>' +
+        'AudioContext: ' + PianoAudio.state() + '<br>' +
+        '输出延迟 outputLatency: ' + msStr(PianoAudio.outputLatency()) + '<br>' +
+        '缓冲延迟 baseLatency: ' + msStr(PianoAudio.baseLatency()) + '<br>' +
+        '采样率: ' + PianoAudio.sampleRate() + ' Hz<br>' +
+        '按键调度(开面板时): ' + (diagSched == null ? '—' : diagSched.toFixed(1) + 'ms') + '<br>' +
+        '单音渲染峰值: ' + (d.maxRenderMs || 0).toFixed(1) + 'ms<br>' +
+        '音源: ' + (PianoAudio.inSampleMode() ? '真实采样(88)' : '合成(' + PianoAudio.readyCount() + '/88)') + '<br>' +
+        'Worker: ' + (d.worker ? '是' : '否') + '<br>' +
+        '<span style="font-size:10px">' + navigator.userAgent.slice(0, 100) + '</span>';
+    };
+    toneBtn.addEventListener('pointerup', e => {
+      e.preventDefault();
+      const now = Date.now();
+      taps = now - tapT < 1500 ? taps + 1 : 1;
+      tapT = now;
+      if (taps < 5) return;
+      taps = 0;
+      if (diagEl) { clearInterval(diagEl._iv); diagEl.remove(); diagEl = null; return; }
+      const t0 = performance.now();
+      PianoAudio.noteOn(69, 0.9);            // A4：现场实测一次调度+发声
+      diagSched = performance.now() - t0;
+      PianoAudio.noteOff(69);
+      diagEl = document.createElement('div');
+      diagEl.id = 'diagPanel';
+      Object.assign(diagEl.style, {
+        position: 'fixed', zIndex: 9999, top: '46px', left: '8px',
+        background: 'rgba(10,12,16,.94)', color: '#cfe3ff', font: '12px/1.6 monospace',
+        padding: '10px 12px', borderRadius: '8px', border: '1px solid #2a3644',
+        pointerEvents: 'none', whiteSpace: 'nowrap'
+      });
+      document.body.appendChild(diagEl);
+      renderDiag();
+      diagEl._iv = setInterval(renderDiag, 2000);   // 定期刷新（outputLatency 会波动）
+    });
+
+    console.log('[纸带钢琴] v40 诊断');
     window.__piano = { rows, audio: PianoAudio };
   }
 
